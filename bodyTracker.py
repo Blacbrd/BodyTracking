@@ -7,9 +7,7 @@ import json
 import vosk
 import pyaudio
 
-# ---------------------------
-# Setup for Mediapipe (Pose)
-# ---------------------------
+# Set up for mediapipe
 mp_drawing = mp.solutions.drawing_utils
 mp_pose = mp.solutions.pose
 
@@ -18,19 +16,18 @@ def calculate_angle(a, b, c):
     ba = a - b
     bc = c - b
     cosine_angle = np.dot(ba, bc) / (np.linalg.norm(ba) * np.linalg.norm(bc))
+
+    # Clips to reduce noise
     angle = np.arccos(np.clip(cosine_angle, -1.0, 1.0))
     return np.degrees(angle)
 
 def calibrate():
     print("Calibrating... Please stand still.")
     # Implement your calibration logic here.
-    # For example, capture and store reference landmark positions.
     print("Calibration complete.")
 
-# ---------------------------
-# Setup for Vosk Speech Recognition using PyAudio Callback
-# ---------------------------
-vosk_model_path = r"C:\Users\blacb\Downloads\vosk-model-en-us-0.42-gigaspeech\vosk-model-en-us-0.42-gigaspeech"  # Replace with your model directory
+# Set-up for vosk voice recognition
+vosk_model_path = r"C:\Users\blacb\Downloads\vosk-model-small-en-us-0.15\vosk-model-small-en-us-0.15"
 model = vosk.Model(vosk_model_path)
 
 # Queue for audio data and commands
@@ -49,29 +46,37 @@ def speech_recognition_worker():
     """
     This worker thread reads audio data from audio_queue, feeds it to the Vosk recognizer,
     and if the word 'calibrate' is detected, puts a signal in command_queue.
+    After triggering calibration, the recognizer's state is reset so that the calibrate
+    keyword is cleared from the recognizer's buffer.
     """
     recognizer = vosk.KaldiRecognizer(model, 16000)
     while True:
         data = audio_queue.get()
+        # Try to get a full result first.
         if recognizer.AcceptWaveform(data):
             result_json = recognizer.Result()
             result = json.loads(result_json)
             text = result.get("text", "")
-            if "calibrate" in text:
-                print("Voice command detected:", text)
-                command_queue.put("calibrate")
-        # Optionally, also process partial results if needed:
-        # else:
-        #     partial = recognizer.PartialResult()
-        #     print("Partial:", partial)
+        else:
+            # Otherwise, use the partial result for faster feedback.
+            partial_json = recognizer.PartialResult()
+            result = json.loads(partial_json)
+            text = result.get("partial", "")
+            
+        # Check for the calibrate command in the recognized text.
+        if "calibrate" in text.lower():
+            print("Voice command detected:", text)
+            command_queue.put("calibrate")
+            # Reset the recognizer's state to clear the accumulated audio.
+            recognizer.Reset()
 
-# Start PyAudio stream in callback mode
+# Start PyAudio stream with a smaller buffer for faster processing
 p = pyaudio.PyAudio()
 stream = p.open(format=pyaudio.paInt16,
                 channels=1,
                 rate=16000,
                 input=True,
-                frames_per_buffer=8000,
+                frames_per_buffer=4000,  # Reduced buffer size for lower latency
                 stream_callback=audio_callback)
 stream.start_stream()
 
@@ -79,9 +84,7 @@ stream.start_stream()
 speech_thread = threading.Thread(target=speech_recognition_worker, daemon=True)
 speech_thread.start()
 
-# ---------------------------
-# Setup for OpenCV Video Capture and Mediapipe Pose
-# ---------------------------
+# Set-up openCV
 cap = cv2.VideoCapture(0)
 
 with mp_pose.Pose(min_detection_confidence=0.6, min_tracking_confidence=0.6) as pose:
@@ -100,6 +103,7 @@ with mp_pose.Pose(min_detection_confidence=0.6, min_tracking_confidence=0.6) as 
         try:
             landmarks = results.pose_landmarks.landmark
 
+            # Gets x and y coordinates relative to the screen
             def get_landmark_point(landmark):
                 return [int(landmark.x * frame.shape[1]), int(landmark.y * frame.shape[0])]
 
@@ -120,17 +124,15 @@ with mp_pose.Pose(min_detection_confidence=0.6, min_tracking_confidence=0.6) as 
                         cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 0), 2, cv2.LINE_AA)
 
         except Exception as e:
-            # If landmarks are not detected or another error occurs, just print the error.
             print("Error processing pose:", e)
 
         # Draw pose landmarks on the image
         mp_drawing.draw_landmarks(image, results.pose_landmarks, mp_pose.POSE_CONNECTIONS)
 
-        # Check if any command has been queued
+        # Check if any command has been queued.
         if not command_queue.empty():
             command = command_queue.get()
             if command == "calibrate":
-                # Start calibration in a separate thread so as not to block the main loop.
                 threading.Thread(target=calibrate, daemon=True).start()
 
         cv2.imshow("Body Recognition", image)
