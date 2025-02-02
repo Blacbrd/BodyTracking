@@ -1,35 +1,87 @@
 import cv2
 import mediapipe as mp
 import numpy as np
+import threading
+import queue
+import json
+import vosk
+import pyaudio
 
-
-def calculate_angle(a, b, c):
-    a = np.array(a)
-    b = np.array(b)
-    c = np.array(c)
-
-    # Calculate vectors
-    ba = a - b
-    bc = c - b
-
-    # Calculate the cosine of the angle using the dot product
-    cosine_angle = np.dot(ba, bc) / (np.linalg.norm(ba) * np.linalg.norm(bc))
-
-    # Clip to prevent NaN errors
-    angle = np.arccos(np.clip(cosine_angle, -1.0, 1.0))  
-
-    # Convert to degrees
-    angle = np.degrees(angle)
-
-    return angle
-
-
-# Drawing utilities
+# ---------------------------
+# Setup for Mediapipe (Pose)
+# ---------------------------
 mp_drawing = mp.solutions.drawing_utils
-
-# Pose estimation model
 mp_pose = mp.solutions.pose
 
+def calculate_angle(a, b, c):
+    a, b, c = np.array(a), np.array(b), np.array(c)
+    ba = a - b
+    bc = c - b
+    cosine_angle = np.dot(ba, bc) / (np.linalg.norm(ba) * np.linalg.norm(bc))
+    angle = np.arccos(np.clip(cosine_angle, -1.0, 1.0))
+    return np.degrees(angle)
+
+def calibrate():
+    print("Calibrating... Please stand still.")
+    # Implement your calibration logic here.
+    # For example, capture and store reference landmark positions.
+    print("Calibration complete.")
+
+# ---------------------------
+# Setup for Vosk Speech Recognition using PyAudio Callback
+# ---------------------------
+vosk_model_path = r"C:\Users\blacb\Downloads\vosk-model-en-us-0.42-gigaspeech\vosk-model-en-us-0.42-gigaspeech"  # Replace with your model directory
+model = vosk.Model(vosk_model_path)
+
+# Queue for audio data and commands
+audio_queue = queue.Queue()
+command_queue = queue.Queue()
+
+def audio_callback(in_data, frame_count, time_info, status_flags):
+    """
+    This callback is called by PyAudio when new audio data is available.
+    It puts the raw audio data into a thread-safe queue.
+    """
+    audio_queue.put(in_data)
+    return (None, pyaudio.paContinue)
+
+def speech_recognition_worker():
+    """
+    This worker thread reads audio data from audio_queue, feeds it to the Vosk recognizer,
+    and if the word 'calibrate' is detected, puts a signal in command_queue.
+    """
+    recognizer = vosk.KaldiRecognizer(model, 16000)
+    while True:
+        data = audio_queue.get()
+        if recognizer.AcceptWaveform(data):
+            result_json = recognizer.Result()
+            result = json.loads(result_json)
+            text = result.get("text", "")
+            if "calibrate" in text:
+                print("Voice command detected:", text)
+                command_queue.put("calibrate")
+        # Optionally, also process partial results if needed:
+        # else:
+        #     partial = recognizer.PartialResult()
+        #     print("Partial:", partial)
+
+# Start PyAudio stream in callback mode
+p = pyaudio.PyAudio()
+stream = p.open(format=pyaudio.paInt16,
+                channels=1,
+                rate=16000,
+                input=True,
+                frames_per_buffer=8000,
+                stream_callback=audio_callback)
+stream.start_stream()
+
+# Start the speech recognition worker thread
+speech_thread = threading.Thread(target=speech_recognition_worker, daemon=True)
+speech_thread.start()
+
+# ---------------------------
+# Setup for OpenCV Video Capture and Mediapipe Pose
+# ---------------------------
 cap = cv2.VideoCapture(0)
 
 with mp_pose.Pose(min_detection_confidence=0.6, min_tracking_confidence=0.6) as pose:
@@ -38,25 +90,19 @@ with mp_pose.Pose(min_detection_confidence=0.6, min_tracking_confidence=0.6) as 
         if not ret:
             break
 
-        # Recolour to RGB as OpenCV uses BGR
+        # Convert frame to RGB for Mediapipe processing
         image = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
         image.flags.writeable = False
-
-        # Make detection
         results = pose.process(image)
-
-        # Recolour back to BGR
         image.flags.writeable = True
         image = cv2.cvtColor(image, cv2.COLOR_RGB2BGR)
 
         try:
             landmarks = results.pose_landmarks.landmark
 
-            # Reduces need for repeat code
             def get_landmark_point(landmark):
                 return [int(landmark.x * frame.shape[1]), int(landmark.y * frame.shape[0])]
 
-            # Get coordinates of joints
             shoulderL = get_landmark_point(landmarks[mp_pose.PoseLandmark.LEFT_SHOULDER])
             elbowL = get_landmark_point(landmarks[mp_pose.PoseLandmark.LEFT_ELBOW])
             wristL = get_landmark_point(landmarks[mp_pose.PoseLandmark.LEFT_WRIST])
@@ -65,32 +111,38 @@ with mp_pose.Pose(min_detection_confidence=0.6, min_tracking_confidence=0.6) as 
             elbowR = get_landmark_point(landmarks[mp_pose.PoseLandmark.RIGHT_ELBOW])
             wristR = get_landmark_point(landmarks[mp_pose.PoseLandmark.RIGHT_WRIST])
 
-            # Calculate angles
             angleL = int(calculate_angle(shoulderL, elbowL, wristL))
             angleR = int(calculate_angle(shoulderR, elbowR, wristR))
 
-            print(f"Left: {angleL}°")
-            print(f"Right: {angleR}°")
-
-            # Display angles on screen
             cv2.putText(image, f'{angleL}', (elbowL[0] - 30, elbowL[1] - 10), 
                         cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 0), 2, cv2.LINE_AA)
-
             cv2.putText(image, f'{angleR}', (elbowR[0] - 30, elbowR[1] - 10), 
                         cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 0), 2, cv2.LINE_AA)
 
         except Exception as e:
-            print("Error:", e)
-            pass
+            # If landmarks are not detected or another error occurs, just print the error.
+            print("Error processing pose:", e)
 
-        # Render detections
+        # Draw pose landmarks on the image
         mp_drawing.draw_landmarks(image, results.pose_landmarks, mp_pose.POSE_CONNECTIONS)
+
+        # Check if any command has been queued
+        if not command_queue.empty():
+            command = command_queue.get()
+            if command == "calibrate":
+                # Start calibration in a separate thread so as not to block the main loop.
+                threading.Thread(target=calibrate, daemon=True).start()
 
         cv2.imshow("Body Recognition", image)
 
-        # Exit if 'q' is pressed
+        # Break the loop when 'q' is pressed.
         if cv2.waitKey(10) & 0xFF == ord("q"):
             break
 
 cap.release()
 cv2.destroyAllWindows()
+
+# Clean up the audio stream
+stream.stop_stream()
+stream.close()
+p.terminate()
