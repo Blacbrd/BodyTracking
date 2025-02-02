@@ -23,8 +23,6 @@ def calculate_angle(a, b, c):
 
 def calibrate():
     print("Calibrating... Please stand still.")
-    # Implement your calibration logic here.
-    print("Calibration complete.")
 
 # Set-up for vosk voice recognition
 vosk_model_path = r"C:\Users\blacb\Downloads\vosk-model-small-en-us-0.15\vosk-model-small-en-us-0.15"
