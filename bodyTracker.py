@@ -6,12 +6,22 @@ import queue
 import json
 import vosk
 import pyaudio
+from playsound import playsound
 
 # Set up for mediapipe
 mp_drawing = mp.solutions.drawing_utils
 mp_pose = mp.solutions.pose
 
 def calculate_angle(a, b, c):
+
+    z = c[2]
+
+    a.pop()
+    b.pop()
+    c.pop()
+
+    print(z)
+
     a, b, c = np.array(a), np.array(b), np.array(c)
     ba = a - b
     bc = c - b
@@ -22,7 +32,8 @@ def calculate_angle(a, b, c):
     return np.degrees(angle)
 
 def calibrate():
-    print("Calibrating... Please stand still.")
+    playsound(r"C:\Users\blacb\Downloads\fart-with-reverb.mp3")
+    
 
 # Set-up for vosk voice recognition
 vosk_model_path = r"C:\Users\blacb\Downloads\vosk-model-small-en-us-0.15\vosk-model-small-en-us-0.15"
@@ -103,7 +114,7 @@ with mp_pose.Pose(min_detection_confidence=0.6, min_tracking_confidence=0.6) as 
 
             # Gets x and y coordinates relative to the screen
             def get_landmark_point(landmark):
-                return [int(landmark.x * frame.shape[1]), int(landmark.y * frame.shape[0])]
+                return [int(landmark.x * frame.shape[1]), int(landmark.y * frame.shape[0]), landmark.z]
 
             shoulderL = get_landmark_point(landmarks[mp_pose.PoseLandmark.LEFT_SHOULDER])
             elbowL = get_landmark_point(landmarks[mp_pose.PoseLandmark.LEFT_ELBOW])
