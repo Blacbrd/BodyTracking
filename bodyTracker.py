@@ -8,6 +8,8 @@ import vosk
 import pyaudio
 from playsound import playsound
 
+# Comment for git commit
+
 # -------------------- Global Setup --------------------
 
 # Set up for mediapipe
