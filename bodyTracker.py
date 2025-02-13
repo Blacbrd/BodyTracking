@@ -99,11 +99,11 @@ def speech_recognition_worker():
             text = result.get("partial", "")
             
         # Check for "recalibrate" first so that it doesn’t get caught by the "calibrate" check.
-        if "recalibrate" in text.lower() and ("leg" in text.lower() or "legs" in text.lower() or "one" in text.lower()):
+        if "recalibrate" in text.lower() and ("leg" in text.lower() or "legs" in text.lower() or "feet" in text.lower() or "one" in text.lower()):
             print("Voice command detected: recalibrate")
             command_queue.put("recalibrate")
             recognizer.Reset()
-        if "recalibrate" in text.lower() and ("hand" in text.lower() or "hands" in text.lower() or "two" in text.lower()):
+        if "recalibrate" in text.lower() and ("hand" in text.lower() or "hands" in text.lower() or "arm" in text.lower() or "arms" in text.lower() or "two" in text.lower()):
             print("Voice command detected: calibrate")
             command_queue.put("calibrate")
             recognizer.Reset()
