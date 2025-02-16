@@ -7,8 +7,8 @@ import json
 import vosk
 import pyaudio
 from playsound import playsound
-
-# Comment for git commit
+import time
+import pyautogui
 
 # -------------------- Global Setup --------------------
 
@@ -32,15 +32,57 @@ left_punch_display_counter = 0
 right_punch_display_counter = 0
 DISPLAY_FRAMES = 15           # Number of frames to display the "Punch!" label
 
-# Threshold for using the z-axis (if needed) can be set here.
-Z_THRESHOLD_RATIO = 0.2      # (Not used in the state-machine logic below)
-
 # --- Walking (Forward Movement) Variables ---
-walk_ready = True           # Flag so a new step is only triggered once the knees have dropped below the line.
-WALK_DURATION_FRAMES = 15   # Duration (in frames) to display the "walking" feedback.
-walk_display_counter = 0    # Counter for visual feedback.
-WALK_THRESHOLD_ENABLED = True  # <--- Set to False (or comment out the block below) to disable the threshold line feature.
-knee_threshold = None       # This will store the y coordinate of the horizontal threshold line.
+WALK_THRESHOLD_ENABLED = True  # Set to False to disable the threshold line feature.
+knee_threshold = None          # Will store the y coordinate of the horizontal threshold line.
+# New walking variables:
+walk_triggered = False         # True when a walking event has been triggered.
+walk_start_time = 0            # Time when walking was triggered.
+walk_reset = True              # Becomes True when both knees are below the threshold.
+
+# -------------------- Punch to Minecraft Automation --------------------
+# These variables and functions determine if a punch is a single punch
+# (triggering a left-click) or if consecutive punches are occurring (triggering a hold).
+punch_last_time = 0
+punch_hold_active = False
+punch_timer = None
+CONSECUTIVE_THRESHOLD = 1  # seconds (adjust as needed)
+
+def execute_single_punch():
+    """
+    Executes a single punch action in Minecraft by simulating a left mouse click.
+    This is triggered if no consecutive punch is detected within the threshold.
+    """
+    global punch_timer, punch_hold_active
+    if not punch_hold_active:
+        pyautogui.click(button='left')
+        print("Single punch executed: left click")
+    punch_timer = None
+
+def handle_punch():
+    """
+    Called whenever a left or right punch is detected.
+    
+    - If no recent punch is pending, a timer is started to simulate a single click.
+    - If a new punch comes in within CONSECUTIVE_THRESHOLD seconds, the timer is
+      canceled and the left mouse button is held down to simulate mining.
+    """
+    global punch_last_time, punch_hold_active, punch_timer
+    now = time.time()
+    if punch_timer is None:
+        # No pending action; start a timer for a single click.
+        punch_last_time = now
+        punch_timer = threading.Timer(CONSECUTIVE_THRESHOLD, execute_single_punch)
+        punch_timer.start()
+    else:
+        # A punch already occurred within the threshold: consecutive punches.
+        punch_timer.cancel()
+        punch_timer = None
+        if not punch_hold_active:
+            pyautogui.mouseDown(button='left')
+            punch_hold_active = True
+            print("Consecutive punches detected: holding left mouse button for mining")
+        punch_last_time = now
 
 # -------------------- Utility Functions --------------------
 
@@ -65,11 +107,10 @@ def calibrate(current_wristL_z, current_wristR_z):
     calibrated = True
     print(f"Calibration complete. Left wrist z: {calib_wristL_z}, Right wrist z: {calib_wristR_z}")
 
-# This is where you can set how high the line is
 def find_horizontal_threshold(left_knee_y, offset=25):
     """
     Calculates a horizontal threshold line based on the left knee's y coordinate.
-    The threshold is shifted up (i.e. a smaller y value) by the specified offset.
+    The threshold is shifted upward by the specified offset.
     """
     return left_knee_y - offset
 
@@ -166,24 +207,25 @@ with mp_pose.Pose(min_detection_confidence=0.6, min_tracking_confidence=0.6) as 
                         cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 0), 2, cv2.LINE_AA)
 
             # --------- Punch Detection State Machine ----------
-
-            # For left arm:
+            # Left arm punch detection
             if angleL < SMALL_ANGLE_THRESHOLD:
                 left_ready = True
             if left_ready and angleL > LARGE_ANGLE_THRESHOLD:
                 print("Left punch detected!")
                 left_ready = False
                 left_punch_display_counter = DISPLAY_FRAMES
+                handle_punch()  # Link to Minecraft action
 
-            # For right arm:
+            # Right arm punch detection
             if angleR < SMALL_ANGLE_THRESHOLD:
                 right_ready = True
             if right_ready and angleR > LARGE_ANGLE_THRESHOLD:
                 print("Right punch detected!")
                 right_ready = False
                 right_punch_display_counter = DISPLAY_FRAMES
+                handle_punch()  # Link to Minecraft action
 
-            # (Optional) Show the delta z values for debugging (if calibration is used)
+            # (Optional) Display delta z values for debugging (if calibration is used)
             if calibrated:
                 delta_z_left = wristL[2] - calib_wristL_z
                 delta_z_right = wristR[2] - calib_wristR_z
@@ -193,45 +235,43 @@ with mp_pose.Pose(min_detection_confidence=0.6, min_tracking_confidence=0.6) as 
                             cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 0, 0), 2, cv2.LINE_AA)
 
             # --------- Walking (Forward Movement) Feature ----------
-            # This entire section is controlled by WALK_THRESHOLD_ENABLED.
-            # To disable the walking feature, you can set WALK_THRESHOLD_ENABLED = False.
-            #
-            # When both knees are detected, the function find_horizontal_threshold() is used to
-            # calculate a horizontal line (based on the left knee's y coordinate, shifted upward by an offset).
-            # Every time either knee moves above this line (i.e. y coordinate becomes less than the threshold),
-            # and if walk_ready is True, the player will "move forwards" for one second (simulated here with
-            # a print and visual feedback). The knees then have to drop back below the line (i.e. y becomes greater)
-            # before a new forward move is registered.
-
-            # Get knee landmarks (landmark indices 25 and 26)
+            # Retrieve knee landmarks.
             left_knee = get_landmark_point(landmarks[mp_pose.PoseLandmark.LEFT_KNEE])
             right_knee = get_landmark_point(landmarks[mp_pose.PoseLandmark.RIGHT_KNEE])
 
             if WALK_THRESHOLD_ENABLED:
-                # Initialize the knee threshold if not already set.
                 if knee_threshold is None:
                     knee_threshold = find_horizontal_threshold(left_knee[1])
-                # Draw the horizontal threshold line. (Comment out this block to disable drawing.)
                 cv2.line(image, (0, knee_threshold), (frame.shape[1], knee_threshold), (255, 0, 255), 2)
 
-                # Check if either knee has moved above the threshold.
-                if walk_ready and (left_knee[1] < knee_threshold or right_knee[1] < knee_threshold):
-                    print("Walking forwards!")
-                    walk_display_counter = WALK_DURATION_FRAMES
-                    walk_ready = False
-
-                # Reset the walk_ready flag when both knees are below (under) the threshold.
-                if left_knee[1] > knee_threshold and right_knee[1] > knee_threshold:
-                    walk_ready = True
-
-                # Display visual feedback for walking.
-                if walk_display_counter > 0:
-                    cv2.putText(image, "WALKING FORWARDS", (50, 110),
+                # Trigger walking for 1 second when any knee is raised (and allowed by walk_reset)
+                if walk_reset and not walk_triggered and (left_knee[1] < knee_threshold or right_knee[1] < knee_threshold):
+                    walk_triggered = True
+                    walk_start_time = time.time()
+                    pyautogui.keyDown('w')
+                    print("Walking triggered: 'w' key pressed")
+                    walk_reset = False
+                    cv2.putText(image, "WALKING FOR 1s", (50, 110),
                                 cv2.FONT_HERSHEY_SIMPLEX, 1, (255, 0, 255), 2, cv2.LINE_AA)
-                    walk_display_counter -= 1
+
+                # If walking has been triggered, release 'w' after 0.4 seconds.
+                if walk_triggered and (time.time() - walk_start_time >= 0.4):
+                    pyautogui.keyUp('w')
+                    print("Walking duration ended: 'w' key released")
+                    walk_triggered = False
+
+                # Reset the walk flag when both knees are below the threshold.
+                if left_knee[1] > knee_threshold and right_knee[1] > knee_threshold:
+                    walk_reset = True
 
         except Exception as e:
             print("Error processing pose:", e)
+
+        # --------- Check for releasing held mouse (mining) ----------
+        if punch_hold_active and (time.time() - punch_last_time > CONSECUTIVE_THRESHOLD):
+            pyautogui.mouseUp(button='left')
+            punch_hold_active = False
+            print("Consecutive punches ended: released left mouse button")
 
         # Draw pose landmarks.
         mp_drawing.draw_landmarks(image, results.pose_landmarks, mp_pose.POSE_CONNECTIONS)
@@ -241,7 +281,6 @@ with mp_pose.Pose(min_detection_confidence=0.6, min_tracking_confidence=0.6) as 
             command = command_queue.get()
             if command == "calibrate":
                 try:
-                    # Calibrate using the current wrist positions.
                     calib_left = wristL[2]
                     calib_right = wristR[2]
                     threading.Thread(target=calibrate, args=(calib_left, calib_right), daemon=True).start()
@@ -249,8 +288,6 @@ with mp_pose.Pose(min_detection_confidence=0.6, min_tracking_confidence=0.6) as 
                     print("Calibration error:", e)
             elif command == "recalibrate":
                 try:
-                    # Recalibrate the knee threshold using the current left knee y coordinate.
-                    # (If the knees are not visible, the threshold will remain None and nothing is drawn.)
                     if 'left_knee' in locals() and left_knee is not None:
                         knee_threshold = find_horizontal_threshold(left_knee[1])
                         print("Knee threshold recalibrated. New threshold:", knee_threshold)
