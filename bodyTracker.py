@@ -10,6 +10,8 @@ from playsound import playsound
 import time
 import pyautogui
 
+# Daily git commit
+
 # -------------------- Global Setup --------------------
 
 # Set up for mediapipe
