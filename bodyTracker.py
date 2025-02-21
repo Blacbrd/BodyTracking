@@ -10,18 +10,11 @@ from playsound import playsound
 import time
 import pyautogui
 
-# Daily git commit
-
 # -------------------- Global Setup --------------------
 
 # Set up for mediapipe
 mp_drawing = mp.solutions.drawing_utils
 mp_pose = mp.solutions.pose
-
-# Calibration variables for wrist depth
-calibrated = False
-calib_wristL_z = None
-calib_wristR_z = None
 
 # --- Punch State Machine Variables ---
 left_ready = True
@@ -40,28 +33,27 @@ knee_threshold = None          # Will store the y coordinate of the horizontal t
 
 # New walking variables for consecutive detection:
 CONSECUTIVE_WALK_THRESHOLD = 0.5  # seconds – if a new knee event is detected within this time, treat as consecutive.
-# These globals track the walking state.
 walk_last_time = 0              # Time of the last detected knee event.
-walk_hold_active = False        # True if we've switched to a continuous (consecutive) walking state.
-walk_timer = None               # Timer for handling a single (non-consecutive) walking event.
+walk_hold_active = False        # (Unused in the new walking logic.)
+walk_timer = None               # (Unused in the new walking logic.)
+
+# NEW: Flag to ensure only one walk event is triggered per knee raise.
+walk_triggered = False
 
 # --- Jumping Variables ---
-# jump_ready will be True when both knees have been lowered, so that a new jump can be triggered.
 jump_ready = True
 
+# --- Block Placement Variables ---
+# This flag will be True when the wrists are "uncrossed" (ready to place a block again).
+placement_ready = True
+
 # -------------------- Punch to Minecraft Automation --------------------
-# These variables and functions determine if a punch is a single punch
-# (triggering a left-click) or if consecutive punches are occurring (triggering a hold).
 punch_last_time = 0
 punch_hold_active = False
 punch_timer = None
 CONSECUTIVE_THRESHOLD = 1  # seconds (adjust as needed)
 
 def execute_single_punch():
-    """
-    Executes a single punch action in Minecraft by simulating a left mouse click.
-    This is triggered if no consecutive punch is detected within the threshold.
-    """
     global punch_timer, punch_hold_active
     if not punch_hold_active:
         pyautogui.click(button='left')
@@ -69,23 +61,14 @@ def execute_single_punch():
     punch_timer = None
 
 def handle_punch():
-    """
-    Called whenever a left or right punch is detected.
-    
-    - If no recent punch is pending, a timer is started to simulate a single click.
-    - If a new punch comes in within CONSECUTIVE_THRESHOLD seconds, the timer is
-      canceled and the left mouse button is held down to simulate mining.
-    """
     global punch_last_time, punch_hold_active, punch_timer
     now = time.time()
     if punch_timer is None:
-        # No pending action; start a timer for a single click.
         punch_last_time = now
         punch_timer = threading.Timer(CONSECUTIVE_THRESHOLD, execute_single_punch)
         punch_timer.daemon = True
         punch_timer.start()
     else:
-        # A punch already occurred within the threshold: consecutive punches.
         punch_timer.cancel()
         punch_timer = None
         if not punch_hold_active:
@@ -96,35 +79,22 @@ def handle_punch():
 
 # -------------------- Walking Automation Functions --------------------
 def release_walk():
-    """Releases the 'w' key and resets walking state."""
     global walk_hold_active
     pyautogui.keyUp('w')
     print("Single walk ended: 'w' key released")
     walk_hold_active = False
 
 def execute_single_walk():
-    """
-    Executes a single walking event – holds 'w' for a fixed duration (0.1 seconds)
-    if no consecutive knee events occur.
-    """
     global walk_timer, walk_hold_active
     if not walk_hold_active:
         pyautogui.keyDown('w')
         print("Single walk executed: 'w' key held for 0.1 seconds")
-        # Schedule release after 0.1 seconds.
         t = threading.Timer(0.1, release_walk)
         t.daemon = True
         t.start()
     walk_timer = None
 
 def handle_walk_event():
-    """
-    Called whenever a knee event (knee above the threshold) is detected.
-    
-    - If no recent knee event is pending, starts a timer for a single walking event.
-    - If a new knee event occurs within CONSECUTIVE_WALK_THRESHOLD seconds, cancels the timer
-      (if pending) and switches to continuous walking (holding 'w' until knees are lowered).
-    """
     global walk_last_time, walk_hold_active, walk_timer
     now = time.time()
     if walk_timer is None:
@@ -133,7 +103,6 @@ def handle_walk_event():
         walk_timer.daemon = True
         walk_timer.start()
     else:
-        # Consecutive knee event detected.
         walk_timer.cancel()
         walk_timer = None
         if not walk_hold_active:
@@ -143,23 +112,18 @@ def handle_walk_event():
         walk_last_time = now
 
 # -------------------- Jumping Automation --------------------
-# Jumping is triggered when BOTH knees are above the threshold.
-# We now modify the jump so that a forward input ('w') is applied for a short moment
-# before the jump, ensuring the character moves in the air.
 def execute_jump():
-    """Simulate a jump by holding space briefly so that the game registers it."""
     pyautogui.keyDown('space')
-    time.sleep(0.1)  # Hold space for 100ms
+    time.sleep(0.1)
     pyautogui.keyUp('space')
 
 def handle_jump_event():
     global jump_ready
     if jump_ready:
         if not walk_hold_active:
-            # For a non-walking jump, press 'w' briefly then jump.
             def jump_forward():
                 pyautogui.keyDown('w')
-                time.sleep(0.1)
+                time.sleep(0.05)
                 pyautogui.keyDown('space')
                 time.sleep(0.1)
                 pyautogui.keyUp('space')
@@ -167,16 +131,12 @@ def handle_jump_event():
                 print("Jump executed with forward momentum (non-walking)")
             threading.Thread(target=jump_forward, daemon=True).start()
         else:
-            # If already walking, simply execute the jump.
             threading.Thread(target=execute_jump, daemon=True).start()
             print("Jump while walking executed: space pressed with 'w' held")
         jump_ready = False
 
 # -------------------- Utility Functions --------------------
 def calculate_angle(a, b, c):
-    """
-    Calculates the 2D angle (ignoring z) at point b given three points a, b, and c.
-    """
     a2d = np.array(a[:2])
     b2d = np.array(b[:2])
     c2d = np.array(c[:2])
@@ -186,23 +146,16 @@ def calculate_angle(a, b, c):
     angle = np.arccos(np.clip(cosine_angle, -1.0, 1.0))
     return np.degrees(angle)
 
+# This function now only plays the sound for arms calibration.
 def calibrate(current_wristL_z, current_wristR_z):
     playsound(r"C:\Users\blacb\Downloads\fart-with-reverb.mp3")
-    global calibrated, calib_wristL_z, calib_wristR_z
-    calib_wristL_z = current_wristL_z
-    calib_wristR_z = current_wristR_z
-    calibrated = True
-    print(f"Calibration complete. Left wrist z: {calib_wristL_z}, Right wrist z: {calib_wristR_z}")
+    print("Calibration of arms complete")
 
 def find_horizontal_threshold(left_knee_y, offset=25):
-    """
-    Calculates a horizontal threshold line based on the left knee's y coordinate.
-    The threshold is shifted upward by the specified offset.
-    """
     return left_knee_y - offset
 
 # -------------------- Vosk Audio Setup --------------------
-vosk_model_path = r"C:\Users\blacb\Downloads\vosk-model-small-en-us-0.15\vosk-model-small-en-us-0.15"
+vosk_model_path = r"C:\Users\blacb\Downloads\vosk-model-en-us-0.22-lgraph\vosk-model-en-us-0.22-lgraph"
 model = vosk.Model(vosk_model_path)
 
 audio_queue = queue.Queue()
@@ -224,15 +177,18 @@ def speech_recognition_worker():
             partial_json = recognizer.PartialResult()
             result = json.loads(partial_json)
             text = result.get("partial", "")
-            
-        # Check for "recalibrate" first so that it doesn’t get caught by the "calibrate" check.
-        if "recalibrate" in text.lower() and ("leg" in text.lower() or "legs" in text.lower() or "feet" in text.lower() or "one" in text.lower()):
-            print("Voice command detected: recalibrate")
-            command_queue.put("recalibrate")
+        
+        print(f"You said: {text.lower()}")
+        
+        # If "recalibrate arms" is spoken, queue the arms calibration command.
+        if "recalibrate" in text.lower() and ("arm" in text.lower() or "arms" in text.lower() or "hand" in text.lower() or "hands" in text.lower() or "two" in text.lower()):
+            print("Voice command detected: recalibrate arms")
+            command_queue.put("calibrate_arms")
             recognizer.Reset()
-        if "recalibrate" in text.lower() and ("hand" in text.lower() or "hands" in text.lower() or "arm" in text.lower() or "arms" in text.lower() or "two" in text.lower()):
-            print("Voice command detected: calibrate")
-            command_queue.put("calibrate")
+        # If "recalibrate legs" is spoken, queue the legs recalibration command.
+        if "recalibrate" in text.lower() and ("leg" in text.lower() or "legs" in text.lower() or "feet" in text.lower() or "one" in text.lower()):
+            print("Voice command detected: recalibrate legs")
+            command_queue.put("calibrate_legs")
             recognizer.Reset()
 
 p = pyaudio.PyAudio()
@@ -256,7 +212,6 @@ with mp_pose.Pose(min_detection_confidence=0.6, min_tracking_confidence=0.6) as 
         if not ret:
             break
 
-        # Convert frame to RGB for Mediapipe processing
         image = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
         image.flags.writeable = False
         results = pose.process(image)
@@ -285,42 +240,38 @@ with mp_pose.Pose(min_detection_confidence=0.6, min_tracking_confidence=0.6) as 
             angleL = int(calculate_angle(shoulderL, elbowL, wristL))
             angleR = int(calculate_angle(shoulderR, elbowR, wristR))
 
-            # Display the elbow angles for debugging.
             cv2.putText(image, f'{angleL}', (elbowL[0] - 30, elbowL[1] - 10),
                         cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 0), 2, cv2.LINE_AA)
             cv2.putText(image, f'{angleR}', (elbowR[0] - 30, elbowR[1] - 10),
                         cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 0), 2, cv2.LINE_AA)
 
             # --------- Punch Detection State Machine ----------
-            # Left arm punch detection
             if angleL < SMALL_ANGLE_THRESHOLD:
                 left_ready = True
             if left_ready and angleL > LARGE_ANGLE_THRESHOLD:
                 print("Left punch detected!")
                 left_ready = False
                 left_punch_display_counter = DISPLAY_FRAMES
-                handle_punch()  # Link to Minecraft action
+                handle_punch()
 
-            # Right arm punch detection
             if angleR < SMALL_ANGLE_THRESHOLD:
                 right_ready = True
             if right_ready and angleR > LARGE_ANGLE_THRESHOLD:
                 print("Right punch detected!")
                 right_ready = False
                 right_punch_display_counter = DISPLAY_FRAMES
-                handle_punch()  # Link to Minecraft action
+                handle_punch()
 
-            # (Optional) Display delta z values for debugging (if calibration is used)
-            if calibrated:
-                delta_z_left = wristL[2] - calib_wristL_z
-                delta_z_right = wristR[2] - calib_wristR_z
-                cv2.putText(image, f'dZ_L: {delta_z_left:.2f}', (50, 50),
-                            cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 0, 0), 2, cv2.LINE_AA)
-                cv2.putText(image, f'dZ_R: {delta_z_right:.2f}', (50, 80),
-                            cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 0, 0), 2, cv2.LINE_AA)
+            # --------- Block Placement Feature ----------
+            if wristR[0] < wristL[0]:
+                if placement_ready:
+                    pyautogui.click(button='right')
+                    print("Block placed via wrist crossing!")
+                    placement_ready = False
+            else:
+                placement_ready = True
 
             # --------- Walking (Forward Movement) Feature ----------
-            # Retrieve knee landmarks.
             left_knee = get_landmark_point(landmarks[mp_pose.PoseLandmark.LEFT_KNEE])
             right_knee = get_landmark_point(landmarks[mp_pose.PoseLandmark.RIGHT_KNEE])
 
@@ -328,60 +279,53 @@ with mp_pose.Pose(min_detection_confidence=0.6, min_tracking_confidence=0.6) as 
                 if knee_threshold is None:
                     knee_threshold = find_horizontal_threshold(left_knee[1])
                 cv2.line(image, (0, knee_threshold), (frame.shape[1], knee_threshold), (255, 0, 255), 2)
-
-                # Determine if a knee event (knee above threshold) is occurring.
-                knee_event = (left_knee[1] < knee_threshold or right_knee[1] < knee_threshold)
-                if knee_event:
-                    handle_walk_event()
+                
+                left_above = left_knee[1] < knee_threshold
+                right_above = right_knee[1] < knee_threshold
+                single_knee_event = (left_above != right_above)
+                
+                if single_knee_event and not walk_triggered:
+                    walk_triggered = True
+                    pyautogui.keyDown('w')
+                    print("Walking triggered: 'w' key pressed")
+                    t = threading.Timer(0.5, lambda: (pyautogui.keyUp('w'), print("Walking ended: 'w' key released")))
+                    t.daemon = True
+                    t.start()
                     cv2.putText(image, "WALKING", (50, 110),
                                 cv2.FONT_HERSHEY_SIMPLEX, 1, (255, 0, 255), 2, cv2.LINE_AA)
-                else:
-                    # No knee event detected. If we were in continuous (consecutive) walking,
-                    # check if enough time has passed since the last knee event, and if so, release 'w'.
-                    if walk_hold_active and (time.time() - walk_last_time > CONSECUTIVE_WALK_THRESHOLD):
-                        pyautogui.keyUp('w')
-                        walk_hold_active = False
-                        print("Stopped consecutive walking: 'w' key released")
-                    # If a single-walk timer is pending and no event is detected, cancel it.
-                    if walk_timer is not None:
-                        walk_timer.cancel()
-                        walk_timer = None
+                
+                if not (left_above or right_above):
+                    if walk_triggered:
+                        print("Knees below threshold: resetting walk trigger")
+                    walk_triggered = False
 
             # --------- Jumping Feature ----------
-            # Jumping is triggered when BOTH knees are above the threshold.
-            # If both knees are above the line and jump_ready is True, then:
-            # - For both static and moving jumps, first ensure forward momentum by pressing 'w' briefly,
-            #   then press space.
             if left_knee[1] < knee_threshold and right_knee[1] < knee_threshold:
                 if jump_ready:
                     handle_jump_event()
-                # Do not reset jump_ready here so that consecutive jumps are possible if knees are lowered
             else:
                 jump_ready = True
 
         except Exception as e:
             print("Error processing pose:", e)
 
-        # --------- Check for releasing held mouse (mining) ----------
         if punch_hold_active and (time.time() - punch_last_time > CONSECUTIVE_THRESHOLD):
             pyautogui.mouseUp(button='left')
             punch_hold_active = False
             print("Consecutive punches ended: released left mouse button")
 
-        # Draw pose landmarks.
         mp_drawing.draw_landmarks(image, results.pose_landmarks, mp_pose.POSE_CONNECTIONS)
 
-        # --------- Voice Command Handling ----------
         if not command_queue.empty():
             command = command_queue.get()
-            if command == "calibrate":
+            if command == "calibrate_arms":
                 try:
                     calib_left = wristL[2]
                     calib_right = wristR[2]
                     threading.Thread(target=calibrate, args=(calib_left, calib_right), daemon=True).start()
                 except Exception as e:
                     print("Calibration error:", e)
-            elif command == "recalibrate":
+            elif command == "calibrate_legs":
                 try:
                     if 'left_knee' in locals() and left_knee is not None:
                         knee_threshold = find_horizontal_threshold(left_knee[1])
