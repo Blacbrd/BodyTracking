@@ -23,6 +23,9 @@ right_ready = True
 SMALL_ANGLE_THRESHOLD = 45    # Degrees: elbow is bent (ready for a punch)
 LARGE_ANGLE_THRESHOLD = 120   # Degrees: elbow is extended (punch thrown)
 
+# Add threshold for when arms just go down, since I don't want the player to accidentally punch while resting
+
+
 left_punch_display_counter = 0
 right_punch_display_counter = 0
 DISPLAY_FRAMES = 15           # Number of frames to display the "Punch!" label
@@ -31,13 +34,13 @@ DISPLAY_FRAMES = 15           # Number of frames to display the "Punch!" label
 WALK_THRESHOLD_ENABLED = True  # Set to False to disable the threshold line feature.
 knee_threshold = None          # Will store the y coordinate of the horizontal threshold line.
 
-# New walking variables for consecutive detection:
-CONSECUTIVE_WALK_THRESHOLD = 0.5  # seconds – if a new knee event is detected within this time, treat as consecutive.
-walk_last_time = 0              # Time of the last detected knee event.
-walk_hold_active = False        # (Unused in the new walking logic.)
-walk_timer = None               # (Unused in the new walking logic.)
+# If both knees are raised between the CONSECUTIVE_WALK_THRESHOLD, then continuously walk
+CONSECUTIVE_WALK_THRESHOLD = 0.5  
+walk_last_time = 0
+walk_hold_active = False
+walk_timer = None
 
-# NEW: Flag to ensure only one walk event is triggered per knee raise.
+# Flag to ensure only one walk event is triggered per knee raise.
 walk_triggered = False
 
 # --- Jumping Variables ---
@@ -48,36 +51,65 @@ jump_ready = True
 placement_ready = True
 
 # -------------------- Punch to Minecraft Automation --------------------
+
+# This helps determine whether the last punch and current punch were within the CONSECUTIVE_THRESHOLD time
 punch_last_time = 0
+
 punch_hold_active = False
 punch_timer = None
-CONSECUTIVE_THRESHOLD = 1  # seconds (adjust as needed)
+
+# Amount of seconds. If 2 punches fall within this time frame, the program takes it as mining
+CONSECUTIVE_THRESHOLD = 1 
 
 def execute_single_punch():
+
+    # Makes sure that these variables are updated throughout the program
     global punch_timer, punch_hold_active
+
+    # If there is not consecutive punches, only press the mouse button
     if not punch_hold_active:
         pyautogui.click(button='left')
         print("Single punch executed: left click")
+    
+    # Reset timer
     punch_timer = None
 
 def handle_punch():
     global punch_last_time, punch_hold_active, punch_timer
+
+    # Gets the current time
     now = time.time()
+
+    # If there was no timer before
     if punch_timer is None:
         punch_last_time = now
+
+        # This will set a delay for "CONSECUTIVE_THRESHOLD" seconds (which could be 1 second)
+        # If a second punch is recognised within this time, the else block will execute, which will cancel this thread
+        # If not, then the execute_single_punch() function will run
         punch_timer = threading.Timer(CONSECUTIVE_THRESHOLD, execute_single_punch)
         punch_timer.daemon = True
+
+        # Starts the thread
         punch_timer.start()
     else:
+
+        # If a second punch is detected (since punch_timer is not None), the delay and therefore function call will be cancelled
         punch_timer.cancel()
         punch_timer = None
+
+        # If the punch IS active, then there's no need to press the left mouse button again, it just keeps holding it
         if not punch_hold_active:
             pyautogui.mouseDown(button='left')
             punch_hold_active = True
             print("Consecutive punches detected: holding left mouse button for mining")
+        
+        # Checks for more consecutive punches
         punch_last_time = now
 
 # -------------------- Walking Automation Functions --------------------
+
+# If walking has ended 
 def release_walk():
     global walk_hold_active
     pyautogui.keyUp('w')
@@ -158,6 +190,10 @@ def find_horizontal_threshold(left_knee_y, offset=25):
 vosk_model_path = r"C:\Users\blacb\Downloads\vosk-model-en-us-0.22-lgraph\vosk-model-en-us-0.22-lgraph"
 model = vosk.Model(vosk_model_path)
 
+# These are the only words that will be recognised
+words = ["recalibrate", "calibrate", "arms", "arm", "legs", "leg", "inventory"]
+grammar = json.dumps(words)
+
 audio_queue = queue.Queue()
 command_queue = queue.Queue()
 
@@ -166,7 +202,7 @@ def audio_callback(in_data, frame_count, time_info, status_flags):
     return (None, pyaudio.paContinue)
 
 def speech_recognition_worker():
-    recognizer = vosk.KaldiRecognizer(model, 16000)
+    recognizer = vosk.KaldiRecognizer(model, 16000, grammar)
     while True:
         data = audio_queue.get()
         if recognizer.AcceptWaveform(data):
@@ -177,26 +213,36 @@ def speech_recognition_worker():
             partial_json = recognizer.PartialResult()
             result = json.loads(partial_json)
             text = result.get("partial", "")
-        
-        print(f"You said: {text.lower()}")
-        
-        # If "recalibrate arms" is spoken, queue the arms calibration command.
-        if "recalibrate" in text.lower() and ("arm" in text.lower() or "arms" in text.lower() or "hand" in text.lower() or "hands" in text.lower() or "two" in text.lower()):
-            print("Voice command detected: recalibrate arms")
-            command_queue.put("calibrate_arms")
+
+        if "calibrate" in text.lower() and ("arm" in text.lower() or "leg" in text.lower()):
+            print("Voice command detected:", text)
+            command_queue.put("calibrate_arms" if "arm" in text else "calibrate_legs")
+            time.sleep(0.2)
             recognizer.Reset()
-        # If "recalibrate legs" is spoken, queue the legs recalibration command.
-        if "recalibrate" in text.lower() and ("leg" in text.lower() or "legs" in text.lower() or "feet" in text.lower() or "one" in text.lower()):
-            print("Voice command detected: recalibrate legs")
-            command_queue.put("calibrate_legs")
-            recognizer.Reset()
+        
+        # # If "recalibrate arms" is spoken, queue the arms calibration command.
+        # if "recalibrate" in text.lower() and ("arm" in text.lower() or "arms" in text.lower() or "hand" in text.lower() or "hands" in text.lower() or "ones" in text.lower()):
+        #     print("Voice command detected: recalibrate arms")
+        #     command_queue.put("calibrate_arms")
+
+        #     # Small delay
+        #     time.sleep(0.2)
+        #     recognizer.Reset()
+        # # If "recalibrate legs" is spoken, queue the legs recalibration command.
+        # elif "recalibrate" in text.lower() and ("leg" in text.lower() or "legs" in text.lower() or "feet" in text.lower()):
+        #     print("Voice command detected: recalibrate legs")
+        #     command_queue.put("calibrate_legs")
+
+        #     # Small delay before reset
+        #     time.sleep(0.2)
+        #     recognizer.Reset()
 
 p = pyaudio.PyAudio()
 stream = p.open(format=pyaudio.paInt16,
                 channels=1,
                 rate=16000,
                 input=True,
-                frames_per_buffer=4000,
+                frames_per_buffer=3000,
                 stream_callback=audio_callback)
 stream.start_stream()
 
