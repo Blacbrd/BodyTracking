@@ -191,7 +191,7 @@ vosk_model_path = r"C:\Users\blacb\Downloads\vosk-model-en-us-0.22-lgraph\vosk-m
 model = vosk.Model(vosk_model_path)
 
 # These are the only words that will be recognised
-words = ["recalibrate", "calibrate", "arms", "arm", "legs", "leg", "inventory"]
+words = ["recalibrate", "calibrate", "arms", "arm", "legs", "leg", "inventory", "open", "close", "opened", "closed"]
 grammar = json.dumps(words)
 
 audio_queue = queue.Queue()
