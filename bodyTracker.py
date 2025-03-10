@@ -34,14 +34,23 @@ DISPLAY_FRAMES = 15           # Number of frames to display the "Punch!" label
 WALK_THRESHOLD_ENABLED = True  # Set to False to disable the threshold line feature.
 knee_threshold = None          # Will store the y coordinate of the horizontal threshold line.
 
+# Walking state machine variables
+left_knee_was_up = False
+right_knee_was_up = False
+left_knee_is_up = False
+right_knee_is_up = False
+
 # If both knees are raised between the CONSECUTIVE_WALK_THRESHOLD, then continuously walk
 CONSECUTIVE_WALK_THRESHOLD = 0.5  
 walk_last_time = 0
 walk_hold_active = False
 walk_timer = None
 
-# Flag to ensure only one walk event is triggered per knee raise.
-walk_triggered = False
+# For tracking alternating knee steps
+last_knee_raised = None  # Will be "left" or "right"
+step_count = 0
+step_time_threshold = 1.0  # Time window to detect continuous walking pattern
+last_step_time = 0
 
 # --- Jumping Variables ---
 jump_ready = True
@@ -109,39 +118,102 @@ def handle_punch():
 
 # -------------------- Walking Automation Functions --------------------
 
-# If walking has ended 
+# Function to release the walk key when walking ends
 def release_walk():
     global walk_hold_active
-    pyautogui.keyUp('w')
-    print("Single walk ended: 'w' key released")
-    walk_hold_active = False
+    if walk_hold_active:
+        pyautogui.keyUp('w')
+        print("Walking ended: 'w' key released")
+        walk_hold_active = False
 
+# Function to execute a single short walk
 def execute_single_walk():
     global walk_timer, walk_hold_active
     if not walk_hold_active:
         pyautogui.keyDown('w')
-        print("Single walk executed: 'w' key held for 0.1 seconds")
-        t = threading.Timer(0.1, release_walk)
+        print("Single walk step: 'w' key held for 0.2 seconds")
+        walk_hold_active = True
+        t = threading.Timer(0.2, release_walk)
         t.daemon = True
         t.start()
     walk_timer = None
 
-def handle_walk_event():
-    global walk_last_time, walk_hold_active, walk_timer
-    now = time.time()
-    if walk_timer is None:
-        walk_last_time = now
-        walk_timer = threading.Timer(CONSECUTIVE_WALK_THRESHOLD, execute_single_walk)
-        walk_timer.daemon = True
-        walk_timer.start()
+# Function to handle the walking state and transitions
+def handle_walking(left_knee_position, right_knee_position, knee_threshold):
+    global left_knee_is_up, right_knee_is_up, left_knee_was_up, right_knee_was_up
+    global last_knee_raised, step_count, last_step_time, walk_hold_active
+    
+    # Update current knee positions
+    left_knee_is_up = left_knee_position < knee_threshold
+    right_knee_is_up = right_knee_position < knee_threshold
+    
+    current_time = time.time()
+    
+    # Detect a new step (knee goes from down to up)
+    if left_knee_is_up and not left_knee_was_up:
+        handle_knee_step("left", current_time)
+    elif right_knee_is_up and not right_knee_was_up:
+        handle_knee_step("right", current_time)
+    
+    # If both knees are down, we can prepare for the next step
+    if not left_knee_is_up and not right_knee_is_up:
+        left_knee_was_up = False
+        right_knee_was_up = False
+    
+    # Update previous state
+    left_knee_was_up = left_knee_is_up
+    right_knee_was_up = right_knee_is_up
+    
+    # Check for walking timeout (if user stopped walking)
+    if walk_hold_active and current_time - last_step_time > step_time_threshold:
+        release_walk()
+        step_count = 0
+        print("Walking timeout detected, released walk key")
+
+# Function to handle a single knee step
+def handle_knee_step(knee, current_time):
+    global last_knee_raised, step_count, last_step_time, walk_hold_active
+    
+    # Check if this is an alternating step pattern
+    if last_knee_raised is not None and last_knee_raised != knee:
+        # Alternating step detected
+        time_diff = current_time - last_step_time
+        
+        if time_diff < step_time_threshold:
+            # Increment step counter if steps are happening quickly enough
+            step_count += 1
+            print(f"Alternating step detected ({knee}), step count: {step_count}")
+            
+            # After 3 alternating steps, switch to continuous walking
+            if step_count >= 3 and not walk_hold_active:
+                pyautogui.keyDown('w')
+                walk_hold_active = True
+                print("Continuous walking activated: holding 'w' key")
+            # If already walking, just update the last step time
+            elif walk_hold_active:
+                last_step_time = current_time
+        else:
+            # Too much time between steps, reset counter
+            step_count = 1
+            print(f"New walking sequence started with {knee} knee")
+            
+            # If continuous walking was active, release it
+            if walk_hold_active:
+                release_walk()
+            
+            # Execute a single walk step
+            execute_single_walk()
     else:
-        walk_timer.cancel()
-        walk_timer = None
-        if not walk_hold_active:
-            pyautogui.keyDown('w')
-            walk_hold_active = True
-            print("Consecutive walking detected: holding 'w' continuously")
-        walk_last_time = now
+        # First step or same knee again
+        if last_knee_raised != knee or current_time - last_step_time > step_time_threshold:
+            # New walking sequence or different knee after timeout
+            step_count = 1
+            execute_single_walk()
+            print(f"Single step with {knee} knee")
+    
+    # Update state for next detection
+    last_knee_raised = knee
+    last_step_time = current_time
 
 # -------------------- Jumping Automation --------------------
 def execute_jump():
@@ -185,7 +257,7 @@ def calibrate_arms(current_wristL_z, current_wristR_z):
     playsound(r"C:\Users\blacb\Downloads\fart-with-reverb.mp3")
     print("Calibration of arms complete")
 
-def find_horizontal_threshold(left_knee_y, offset=15):
+def find_horizontal_threshold(left_knee_y, offset=20):
     return left_knee_y - offset
 
 # -------------------- Vosk Audio Setup --------------------
@@ -309,26 +381,20 @@ with mp_pose.Pose(min_detection_confidence=0.6, min_tracking_confidence=0.6) as 
             if WALK_THRESHOLD_ENABLED:
                 if knee_threshold is None:
                     knee_threshold = find_horizontal_threshold(left_knee[1])
+                    
+                # Draw the threshold line
                 cv2.line(image, (0, knee_threshold), (frame.shape[1], knee_threshold), (255, 0, 255), 2)
                 
-                left_above = left_knee[1] < knee_threshold
-                right_above = right_knee[1] < knee_threshold
-                single_knee_event = (left_above != right_above)
+                # Handle the walking based on knee positions
+                handle_walking(left_knee[1], right_knee[1], knee_threshold)
                 
-                if single_knee_event and not walk_triggered:
-                    walk_triggered = True
-                    pyautogui.keyDown('w')
-                    print("Walking triggered: 'w' key pressed")
-                    t = threading.Timer(0.5, lambda: (pyautogui.keyUp('w'), print("Walking ended: 'w' key released")))
-                    t.daemon = True
-                    t.start()
+                # Display walking status
+                if walk_hold_active:
                     cv2.putText(image, "WALKING", (50, 110),
                                 cv2.FONT_HERSHEY_SIMPLEX, 1, (255, 0, 255), 2, cv2.LINE_AA)
-                
-                if not (left_above or right_above):
-                    if walk_triggered:
-                        print("Knees below threshold: resetting walk trigger")
-                    walk_triggered = False
+                elif left_knee_is_up or right_knee_is_up:
+                    cv2.putText(image, "STEP", (50, 110),
+                                cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 255), 2, cv2.LINE_AA)
 
             # --------- Jumping Feature ----------
             if left_knee[1] < knee_threshold and right_knee[1] < knee_threshold:
