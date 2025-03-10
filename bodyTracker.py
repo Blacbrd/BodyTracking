@@ -59,7 +59,7 @@ punch_hold_active = False
 punch_timer = None
 
 # Amount of seconds. If 2 punches fall within this time frame, the program takes it as mining
-CONSECUTIVE_THRESHOLD = 1 
+CONSECUTIVE_THRESHOLD = 0.5
 
 def execute_single_punch():
 
@@ -155,7 +155,7 @@ def handle_jump_event():
         if not walk_hold_active:
             def jump_forward():
                 pyautogui.keyDown('w')
-                time.sleep(0.05)
+                time.sleep(0.01)
                 pyautogui.keyDown('space')
                 time.sleep(0.1)
                 pyautogui.keyUp('space')
@@ -179,11 +179,13 @@ def calculate_angle(a, b, c):
     return np.degrees(angle)
 
 # This function now only plays the sound for arms calibration.
-def calibrate(current_wristL_z, current_wristR_z):
+# What I want it to do, is to find the middle of the body, and if the arms go above that threshold, then they can punch
+# The reason I want to do this, is because when the user relaxes their hands, it counts as a punch, however that is incorrect, so I want to remove that
+def calibrate_arms(current_wristL_z, current_wristR_z):
     playsound(r"C:\Users\blacb\Downloads\fart-with-reverb.mp3")
     print("Calibration of arms complete")
 
-def find_horizontal_threshold(left_knee_y, offset=25):
+def find_horizontal_threshold(left_knee_y, offset=15):
     return left_knee_y - offset
 
 # -------------------- Vosk Audio Setup --------------------
@@ -219,23 +221,6 @@ def speech_recognition_worker():
             command_queue.put("calibrate_arms" if "arm" in text else "calibrate_legs")
             time.sleep(0.2)
             recognizer.Reset()
-        
-        # # If "recalibrate arms" is spoken, queue the arms calibration command.
-        # if "recalibrate" in text.lower() and ("arm" in text.lower() or "arms" in text.lower() or "hand" in text.lower() or "hands" in text.lower() or "ones" in text.lower()):
-        #     print("Voice command detected: recalibrate arms")
-        #     command_queue.put("calibrate_arms")
-
-        #     # Small delay
-        #     time.sleep(0.2)
-        #     recognizer.Reset()
-        # # If "recalibrate legs" is spoken, queue the legs recalibration command.
-        # elif "recalibrate" in text.lower() and ("leg" in text.lower() or "legs" in text.lower() or "feet" in text.lower()):
-        #     print("Voice command detected: recalibrate legs")
-        #     command_queue.put("calibrate_legs")
-
-        #     # Small delay before reset
-        #     time.sleep(0.2)
-        #     recognizer.Reset()
 
 p = pyaudio.PyAudio()
 stream = p.open(format=pyaudio.paInt16,
@@ -362,13 +347,14 @@ with mp_pose.Pose(min_detection_confidence=0.6, min_tracking_confidence=0.6) as 
 
         mp_drawing.draw_landmarks(image, results.pose_landmarks, mp_pose.POSE_CONNECTIONS)
 
+        # This handles all of the calibration
         if not command_queue.empty():
             command = command_queue.get()
             if command == "calibrate_arms":
                 try:
                     calib_left = wristL[2]
                     calib_right = wristR[2]
-                    threading.Thread(target=calibrate, args=(calib_left, calib_right), daemon=True).start()
+                    threading.Thread(target=calibrate_arms, args=(calib_left, calib_right), daemon=True).start()
                 except Exception as e:
                     print("Calibration error:", e)
             elif command == "calibrate_legs":
