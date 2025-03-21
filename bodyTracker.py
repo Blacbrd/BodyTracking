@@ -23,7 +23,8 @@ right_ready = True
 SMALL_ANGLE_THRESHOLD = 45    # Degrees: elbow is bent (ready for a punch)
 LARGE_ANGLE_THRESHOLD = 120   # Degrees: elbow is extended (punch thrown)
 
-# Add threshold for when arms just go down, since I don't want the player to accidentally punch while resting
+# Threshold for when arms just go down, since I don't want the player to accidentally punch while resting
+arm_threshold = None # Set to just above the elbows. Wrists will have to go above this to activate it
 
 
 left_punch_display_counter = 0
@@ -58,6 +59,10 @@ jump_ready = True
 # --- Block Placement Variables ---
 # This flag will be True when the wrists are "uncrossed" (ready to place a block again).
 placement_ready = True
+
+# --- Camera movement Variables ---
+# Only need the left ear as if it moves closer to the right ear it'll just be >= 100%
+baseline_ear_to_ear = None # Will store the yaw (twist)
 
 # -------------------- Punch to Minecraft Automation --------------------
 
@@ -133,7 +138,7 @@ def execute_single_walk():
         pyautogui.keyDown('w')
         print("Single walk step: 'w' key held for 0.2 seconds")
         walk_hold_active = True
-        t = threading.Timer(0.2, release_walk)
+        t = threading.Timer(0.2, release_walk) # Timer used to delay function calling. Similar to time.sleep() except it doesn't block the main thread
         t.daemon = True
         t.start()
     walk_timer = None
@@ -239,6 +244,11 @@ def handle_jump_event():
             print("Jump while walking executed: space pressed with 'w' held")
         jump_ready = False
 
+
+# -------------------- Camera Movement --------------------
+def handle_look(percent):
+    pass
+
 # -------------------- Utility Functions --------------------
 def calculate_angle(a, b, c):
     a2d = np.array(a[:2])
@@ -249,6 +259,11 @@ def calculate_angle(a, b, c):
     cosine_angle = np.dot(ba, bc) / (np.linalg.norm(ba) * np.linalg.norm(bc))
     angle = np.arccos(np.clip(cosine_angle, -1.0, 1.0))
     return np.degrees(angle)
+
+# Will find the percentage distance between the nose and either the left or right ear depending on where the player is looking
+# Will also need to take into account vertical head movement
+
+    
 
 # This function now only plays the sound for arms calibration.
 # What I want it to do, is to find the middle of the body, and if the arms go above that threshold, then they can punch
@@ -265,7 +280,7 @@ vosk_model_path = r"C:\Users\blacb\Downloads\vosk-model-en-us-0.22-lgraph\vosk-m
 model = vosk.Model(vosk_model_path)
 
 # These are the only words that will be recognised
-words = ["recalibrate", "calibrate", "arms", "arm", "legs", "leg", "inventory", "open", "close", "opened", "closed"]
+words = ["recalibrate", "calibrate", "arms", "arm", "legs", "leg", "inventory", "open", "close", "opened", "closed", "head"]
 grammar = json.dumps(words)
 
 audio_queue = queue.Queue()
@@ -412,6 +427,19 @@ with mp_pose.Pose(min_detection_confidence=0.6, min_tracking_confidence=0.6) as 
             print("Consecutive punches ended: released left mouse button")
 
         mp_drawing.draw_landmarks(image, results.pose_landmarks, mp_pose.POSE_CONNECTIONS)
+
+        # --------- Looking Feature ----------
+        left_ear = get_landmark_point(landmarks[mp_pose.PoseLandmark.LEFT_EAR])
+        right_ear = get_landmark_point(landmarks[mp_pose.PoseLandmark.RIGHT_EAR])
+
+        if left_ear[0] != 0 and right_ear[0] != 0:
+
+            # Creates an (x, y) vector from left ear to right ear
+            current_ear_to_ear = [
+                right_ear[0] - left_ear[0],
+                right_ear[1] - left_ear[1]
+            ]
+
 
         # This handles all of the calibration
         if not command_queue.empty():
