@@ -10,6 +10,7 @@ import pyaudio
 from playsound import playsound
 import time
 import pyautogui
+import math
 
 # -------------------- Global Setup --------------------
 
@@ -63,7 +64,7 @@ placement_ready = True
 
 # --- Camera movement Variables ---
 # Only need the left ear as if it moves closer to the right ear it'll just be >= 100%
-baseline_ear_to_ear = None # Will store the yaw (twist)
+base_rotation = None
 
 # -------------------- Punch to Minecraft Automation --------------------
 
@@ -247,8 +248,13 @@ def handle_jump_event():
 
 
 # -------------------- Camera Movement --------------------
-def handle_look(percent):
-    pass
+def set_base_rotation(rotation):
+    global base_rotation
+    base_rotation = rotation
+
+def handle_look(rotation):
+    global base_rotation
+
 
 # -------------------- Utility Functions --------------------
 def calculate_angle(a, b, c):
@@ -261,7 +267,9 @@ def calculate_angle(a, b, c):
     angle = np.arccos(np.clip(cosine_angle, -1.0, 1.0))
     return np.degrees(angle)
 
-def multiply_quart(q1, q2):
+# If we have 2 quaternions being applied one after the other, we can represent it as one
+# Combined rotation
+def multiply_quat(q1, q2):
 
     # (w, x, y, z)
 
@@ -272,10 +280,45 @@ def multiply_quart(q1, q2):
     
     return q
 
+# rm stands for rotation matrix
+def find_quat_from_matrix(rm):
 
-# Will find the percentage distance between the nose and either the left or right ear depending on where the player is looking
-# Will also need to take into account vertical head movement
+    w = 0.5*math.sqrt(1 + rm[0][0] + rm[1][1] + rm[2][2])
+    x = (rm[2][1] - rm[1][2])/(4*w)
+    y = (rm[0][2] - rm[2][0])/(4*w)
+    z = (rm[1][0] - rm[0][1])/(4*w)
 
+    q = (w, x, y, z)
+
+    # Makes sure to normalise all 
+    modulus = math.sqrt(w*w + x*x + y*y + z*z)
+    
+    return (q[0]/modulus, q[1]/modulus, q[2]/modulus, q[3]/modulus)
+
+def inverse_quat(q):
+    return (q[0], -q[1], -q[2], -q[3])
+
+def find_yaw_angle(rotation):
+    global base_rotation
+
+    # Relative rotation
+    rr = multiply_quat(find_quat_from_matrix(rotation),
+                        inverse_quat(find_quat_from_matrix(base_rotation)))
+    
+    angle = math.atan2(2*(rr[1]*rr[3] + rr[0]*rr[2]), 1 - (2*(rr[1]**2 + rr[2]**2)))
+
+    return angle
+
+def find_pitch_angle(rotation):
+    global base_rotation
+
+    # Relative rotation
+    rr = multiply_quat(find_quat_from_matrix(rotation),
+                        inverse_quat(find_quat_from_matrix(base_rotation)))
+    
+    angle = math.atan2(2*(rr[2]*rr[3] - rr[0]*rr[1]), 1 - (2*(rr[1]**2 + rr[2]**2)))
+
+    return angle
     
 
 # This function now only plays the sound for arms calibration.
@@ -430,6 +473,43 @@ with mp_pose.Pose(min_detection_confidence=0.6, min_tracking_confidence=0.6) as 
                     handle_jump_event()
             else:
                 jump_ready = True
+            
+            # --------- Looking Feature ----------
+            left_ear = get_landmark_point(landmarks[mp_pose.PoseLandmark.LEFT_EAR])
+            right_ear = get_landmark_point(landmarks[mp_pose.PoseLandmark.RIGHT_EAR])
+            nose = get_landmark_point(landmarks[mp_pose.PoseLandmark.NOSE])
+
+            left_ear = np.array(left_ear)
+            right_ear = np.array(right_ear)
+            nose = np.array(nose)
+
+            # This gives x plane
+            ear_to_ear_vector = right_ear - left_ear
+
+            # Normalises so that magnitude len is 1
+            ear_to_ear_vector_normalised = ear_to_ear_vector / np.linalg.norm(ear_to_ear_vector)
+
+            # This gives z plane
+            midpoint = (left_ear + right_ear) / 2
+            nose_to_mid_vector = midpoint - nose
+            nose_to_mid_vector_normalised = nose_to_mid_vector / np.linalg.norm(nose_to_mid_vector)
+
+            # This gives y plane
+            face_normalised = np.cross(ear_to_ear_vector_normalised, nose_to_mid_vector_normalised)
+            face_normalised = face_normalised / np.linalg.norm(face_normalised)
+
+            # Gives a more accurate, 100% perpendicular z plane 
+            # Since the z plane we calculated from coordinates may have noise
+            z_axis = np.cross(face_normalised, ear_to_ear_vector_normalised)
+            nose_to_midpoint_normal = z_axis / np.linalg.norm(z_axis)
+
+            rotation_matrix = np.column_stack((ear_to_ear_vector_normalised, face_normalised, nose_to_midpoint_normal))
+            
+            # If the base rotation hasn't been set, set it
+            if base_rotation == None:
+                base_rotation = rotation_matrix
+            
+            handle_look(rotation_matrix)
 
         except Exception as e:
             print("Error processing pose:", e)
@@ -440,37 +520,6 @@ with mp_pose.Pose(min_detection_confidence=0.6, min_tracking_confidence=0.6) as 
             print("Consecutive punches ended: released left mouse button")
 
         mp_drawing.draw_landmarks(image, results.pose_landmarks, mp_pose.POSE_CONNECTIONS)
-
-        # --------- Looking Feature ----------
-        left_ear = get_landmark_point(landmarks[mp_pose.PoseLandmark.LEFT_EAR])
-        right_ear = get_landmark_point(landmarks[mp_pose.PoseLandmark.RIGHT_EAR])
-        nose = get_landmark_point(landmarks[mp_pose.PoseLandmark.NOSE])
-
-        left_ear = np.array(left_ear)
-        right_ear = np.array(right_ear)
-        nose = np.array(nose)
-
-        # This gives x plane
-        ear_to_ear_vector = right_ear - left_ear
-
-        # Normalises so that magnitude len is 1
-        ear_to_ear_vector_norm = ear_to_ear_vector / np.linalg.norm(ear_to_ear_vector)
-
-        # This gives z plane
-        midpoint = (left_ear + right_ear) / 2
-        nose_to_mid_vector = midpoint - nose
-        nose_to_mid_vector_norm = nose_to_mid_vector / np.linalg.norm(nose_to_mid_vector)
-
-        # This gives y plane
-        face_normal = np.cross(ear_to_ear_vector_norm, nose_to_mid_vector_norm)
-        face_normal = face_normal / np.linalg.norm(face_normal)
-
-        # Gives a more accurate, 100% perpendicular z plane 
-        # Since the z plane we calculated from coordinates may have noise
-        z_axis = np.cross(face_normal, ear_to_ear_vector_norm)
-        z_axis_normal = z_axis / np.linalg.norm(z_axis)
-
-        rotation_matrix = np.column_stack((ear_to_ear_vector_norm, z_axis_normal, face_normal))
 
         # This handles all of the calibration
         if not command_queue.empty():
