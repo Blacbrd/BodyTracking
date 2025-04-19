@@ -1,6 +1,7 @@
 import cv2
 import mediapipe as mp
 import numpy as np
+from scipy.spatial.transform import Rotation
 import threading
 import queue
 import json
@@ -42,7 +43,7 @@ left_knee_is_up = False
 right_knee_is_up = False
 
 # If both knees are raised between the CONSECUTIVE_WALK_THRESHOLD, then continuously walk
-CONSECUTIVE_WALK_THRESHOLD = 0.5  
+CONSECUTIVE_WALK_THRESHOLD = 0.7
 walk_last_time = 0
 walk_hold_active = False
 walk_timer = None
@@ -189,8 +190,8 @@ def handle_knee_step(knee, current_time):
             step_count += 1
             print(f"Alternating step detected ({knee}), step count: {step_count}")
             
-            # After 3 alternating steps, switch to continuous walking
-            if step_count >= 3 and not walk_hold_active:
+            # After 2 alternating steps, switch to continuous walking
+            if step_count >= 2 and not walk_hold_active:
                 pyautogui.keyDown('w')
                 walk_hold_active = True
                 print("Continuous walking activated: holding 'w' key")
@@ -260,6 +261,18 @@ def calculate_angle(a, b, c):
     angle = np.arccos(np.clip(cosine_angle, -1.0, 1.0))
     return np.degrees(angle)
 
+def multiply_quart(q1, q2):
+
+    # (w, x, y, z)
+
+    q = (q1[0]*q2[0] - q1[1]*q2[1] - q1[2]*q[2] - q1[3]*q2[3],
+         q1[0]*q2[1] + q1[1]*q2[0] + q1[2]*q2[3] - q1[3]*q2[2],
+         q1[0]*q2[2] - q1[1]*q2[3] + q1[2]*q2[0] + q1[3]*q2[1],
+         q1[0]*q2[3] + q1[1]*q2[2] - q1[2]*q2[1] + q1[3]*q2[0])
+    
+    return q
+
+
 # Will find the percentage distance between the nose and either the left or right ear depending on where the player is looking
 # Will also need to take into account vertical head movement
 
@@ -272,7 +285,7 @@ def calibrate_arms(current_wristL_z, current_wristR_z):
     playsound(r"C:\Users\blacb\Downloads\fart-with-reverb.mp3")
     print("Calibration of arms complete")
 
-def find_horizontal_threshold(left_knee_y, offset=20):
+def find_horizontal_threshold(left_knee_y, offset=15):
     return left_knee_y - offset
 
 # -------------------- Vosk Audio Setup --------------------
@@ -431,15 +444,33 @@ with mp_pose.Pose(min_detection_confidence=0.6, min_tracking_confidence=0.6) as 
         # --------- Looking Feature ----------
         left_ear = get_landmark_point(landmarks[mp_pose.PoseLandmark.LEFT_EAR])
         right_ear = get_landmark_point(landmarks[mp_pose.PoseLandmark.RIGHT_EAR])
+        nose = get_landmark_point(landmarks[mp_pose.PoseLandmark.NOSE])
 
-        if left_ear[0] != 0 and right_ear[0] != 0:
+        left_ear = np.array(left_ear)
+        right_ear = np.array(right_ear)
+        nose = np.array(nose)
 
-            # Creates an (x, y) vector from left ear to right ear
-            current_ear_to_ear = [
-                right_ear[0] - left_ear[0],
-                right_ear[1] - left_ear[1]
-            ]
+        # This gives x plane
+        ear_to_ear_vector = right_ear - left_ear
 
+        # Normalises so that magnitude len is 1
+        ear_to_ear_vector_norm = ear_to_ear_vector / np.linalg.norm(ear_to_ear_vector)
+
+        # This gives z plane
+        midpoint = (left_ear + right_ear) / 2
+        nose_to_mid_vector = midpoint - nose
+        nose_to_mid_vector_norm = nose_to_mid_vector / np.linalg.norm(nose_to_mid_vector)
+
+        # This gives y plane
+        face_normal = np.cross(ear_to_ear_vector_norm, nose_to_mid_vector_norm)
+        face_normal = face_normal / np.linalg.norm(face_normal)
+
+        # Gives a more accurate, 100% perpendicular z plane 
+        # Since the z plane we calculated from coordinates may have noise
+        z_axis = np.cross(face_normal, ear_to_ear_vector_norm)
+        z_axis_normal = z_axis / np.linalg.norm(z_axis)
+
+        rotation_matrix = np.column_stack((ear_to_ear_vector_norm, z_axis_normal, face_normal))
 
         # This handles all of the calibration
         if not command_queue.empty():
