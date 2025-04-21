@@ -246,16 +246,6 @@ def handle_jump_event():
             print("Jump while walking executed: space pressed with 'w' held")
         jump_ready = False
 
-
-# -------------------- Camera Movement --------------------
-def set_base_rotation(rotation):
-    global base_rotation
-    base_rotation = rotation
-
-def handle_look(rotation):
-    global base_rotation
-
-
 # -------------------- Utility Functions --------------------
 def calculate_angle(a, b, c):
     a2d = np.array(a[:2])
@@ -273,7 +263,7 @@ def multiply_quat(q1, q2):
 
     # (w, x, y, z)
 
-    q = (q1[0]*q2[0] - q1[1]*q2[1] - q1[2]*q[2] - q1[3]*q2[3],
+    q = (q1[0]*q2[0] - q1[1]*q2[1] - q1[2]*q2[2] - q1[3]*q2[3],
          q1[0]*q2[1] + q1[1]*q2[0] + q1[2]*q2[3] - q1[3]*q2[2],
          q1[0]*q2[2] - q1[1]*q2[3] + q1[2]*q2[0] + q1[3]*q2[1],
          q1[0]*q2[3] + q1[1]*q2[2] - q1[2]*q2[1] + q1[3]*q2[0])
@@ -298,6 +288,7 @@ def find_quat_from_matrix(rm):
 def inverse_quat(q):
     return (q[0], -q[1], -q[2], -q[3])
 
+# Since I'm working with xyz coordinates, 
 def find_yaw_angle(rotation):
     global base_rotation
 
@@ -305,7 +296,7 @@ def find_yaw_angle(rotation):
     rr = multiply_quat(find_quat_from_matrix(rotation),
                         inverse_quat(find_quat_from_matrix(base_rotation)))
     
-    angle = math.atan2(2*(rr[1]*rr[3] + rr[0]*rr[2]), 1 - (2*(rr[1]**2 + rr[2]**2)))
+    angle = math.atan2(2*(rr[1]*rr[2] + rr[0]*rr[3]), rr[0]*rr[0] + rr[1]*rr[1] - rr[2]*rr[2] - rr[3]*rr[3])
 
     return angle
 
@@ -316,9 +307,32 @@ def find_pitch_angle(rotation):
     rr = multiply_quat(find_quat_from_matrix(rotation),
                         inverse_quat(find_quat_from_matrix(base_rotation)))
     
-    angle = math.atan2(2*(rr[2]*rr[3] - rr[0]*rr[1]), 1 - (2*(rr[1]**2 + rr[2]**2)))
+    angle =  math.asin(-2*(rr[1]*rr[3] - rr[0]*rr[2]))
 
     return angle
+
+# -------------------- Camera Movement --------------------
+def set_base_rotation(rotation):
+    global base_rotation
+    base_rotation = rotation
+
+def handle_look(rotation):
+    global base_rotation
+
+    # If yaw angle > or < than some degree, turn left/right
+    # If pitch angle > or < than some degree, turn up/down
+    # See if you can do it as the same time..?
+
+    yaw_angle = find_yaw_angle(rotation)
+    pitch_angle = find_pitch_angle(rotation)
+
+    print(f"Pitch angle: {math.degrees(pitch_angle):.2f} degrees")
+
+    if pitch_angle > math.radians(15):
+        print("Turned head right!")
+    elif pitch_angle < math.radians(-15):
+        print("Turned head left!")
+
     
 
 # This function now only plays the sound for arms calibration.
@@ -475,13 +489,15 @@ with mp_pose.Pose(min_detection_confidence=0.6, min_tracking_confidence=0.6) as 
                 jump_ready = True
             
             # --------- Looking Feature ----------
-            left_ear = get_landmark_point(landmarks[mp_pose.PoseLandmark.LEFT_EAR])
-            right_ear = get_landmark_point(landmarks[mp_pose.PoseLandmark.RIGHT_EAR])
-            nose = get_landmark_point(landmarks[mp_pose.PoseLandmark.NOSE])
 
-            left_ear = np.array(left_ear)
-            right_ear = np.array(right_ear)
-            nose = np.array(nose)
+            # Need normalised coordinates instead of pixel coordinates
+            left_ear = results.pose_landmarks.landmark[mp_pose.PoseLandmark.LEFT_EAR]
+            right_ear = results.pose_landmarks.landmark[mp_pose.PoseLandmark.RIGHT_EAR]
+            nose = results.pose_landmarks.landmark[mp_pose.PoseLandmark.NOSE]
+
+            left_ear = np.array([left_ear.x, left_ear.y, left_ear.z])
+            right_ear = np.array([right_ear.x, right_ear.y, right_ear.z])
+            nose = np.array([nose.x, nose.y, nose.z])
 
             # This gives x plane
             ear_to_ear_vector = right_ear - left_ear
@@ -506,7 +522,7 @@ with mp_pose.Pose(min_detection_confidence=0.6, min_tracking_confidence=0.6) as 
             rotation_matrix = np.column_stack((ear_to_ear_vector_normalised, face_normalised, nose_to_midpoint_normal))
             
             # If the base rotation hasn't been set, set it
-            if base_rotation == None:
+            if base_rotation is None:
                 base_rotation = rotation_matrix
             
             handle_look(rotation_matrix)
