@@ -273,17 +273,40 @@ def multiply_quat(q1, q2):
 # rm stands for rotation matrix
 def find_quat_from_matrix(rm):
 
-    w = 0.5*math.sqrt(1 + rm[0][0] + rm[1][1] + rm[2][2])
-    x = (rm[2][1] - rm[1][2])/(4*w)
-    y = (rm[0][2] - rm[2][0])/(4*w)
-    z = (rm[1][0] - rm[0][1])/(4*w)
+    m = np.array(rm)
+    tr = m[0][0] + m[1][1] + m[2][2]
 
-    q = (w, x, y, z)
+    if tr > 0:
+        S = math.sqrt(tr + 1.0) * 2  # S=4*qw
+        qw = 0.25 * S
+        qx = (m[2][1] - m[1][2]) / S
+        qy = (m[0][2] - m[2][0]) / S
+        qz = (m[1][0] - m[0][1]) / S
 
-    # Makes sure to normalise all 
-    modulus = math.sqrt(w*w + x*x + y*y + z*z)
-    
-    return (q[0]/modulus, q[1]/modulus, q[2]/modulus, q[3]/modulus)
+    elif (m[0][0] > m[1][1]) and (m[0][0] > m[2][2]):
+        S = math.sqrt(1.0 + m[0][0] - m[1][1] - m[2][2]) * 2  # S=4*qx
+        qw = (m[2][1] - m[1][2]) / S
+        qx = 0.25 * S
+        qy = (m[0][1] + m[1][0]) / S
+        qz = (m[0][2] + m[2][0]) / S
+
+    elif m[1][1] > m[2][2]:
+        S = math.sqrt(1.0 + m[1][1] - m[0][0] - m[2][2]) * 2  # S=4*qy
+        qw = (m[0][2] - m[2][0]) / S
+        qx = (m[0][1] + m[1][0]) / S
+        qy = 0.25 * S
+        qz = (m[1][2] + m[2][1]) / S
+
+    else:
+        S = math.sqrt(1.0 + m[2][2] - m[0][0] - m[1][1]) * 2  # S=4*qz
+        qw = (m[1][0] - m[0][1]) / S
+        qx = (m[0][2] + m[2][0]) / S
+        qy = (m[1][2] + m[2][1]) / S
+        qz = 0.25 * S
+
+    # Normalize the quaternion
+    norm = math.sqrt(qw**2 + qx**2 + qy**2 + qz**2)
+    return (qw/norm, qx/norm, qy/norm, qz/norm)
 
 def inverse_quat(q):
     return (q[0], -q[1], -q[2], -q[3])
@@ -293,23 +316,25 @@ def find_yaw_angle(rotation):
     global base_rotation
 
     # Relative rotation
-    rr = multiply_quat(find_quat_from_matrix(rotation),
-                        inverse_quat(find_quat_from_matrix(base_rotation)))
-    
-    angle = math.atan2(2*(rr[1]*rr[2] + rr[0]*rr[3]), rr[0]*rr[0] + rr[1]*rr[1] - rr[2]*rr[2] - rr[3]*rr[3])
-
-    return angle
+    rr_quat = multiply_quat(find_quat_from_matrix(rotation), inverse_quat(find_quat_from_matrix(base_rotation)))
+    w, x, y, z = rr_quat
+    # Pitch (around Y) calculation
+    sin_pitch = 2 * (w * y - x * z)
+    sin_pitch = np.clip(sin_pitch, -1.0, 1.0)  # Ensure valid arcsin input
+    pitch = math.asin(sin_pitch)
+    return pitch
 
 def find_pitch_angle(rotation):
     global base_rotation
 
     # Relative rotation
-    rr = multiply_quat(find_quat_from_matrix(rotation),
-                        inverse_quat(find_quat_from_matrix(base_rotation)))
-    
-    angle =  math.asin(-2*(rr[1]*rr[3] - rr[0]*rr[2]))
-
-    return angle
+    rr_quat = multiply_quat(find_quat_from_matrix(rotation), inverse_quat(find_quat_from_matrix(base_rotation)))
+    w, x, y, z = rr_quat
+    # Roll (around X) calculation
+    sin_roll = 2 * (w * x + y * z)
+    sin_roll = np.clip(sin_roll, -1.0, 1.0)
+    roll = math.asin(sin_roll)
+    return roll
 
 # -------------------- Camera Movement --------------------
 def set_base_rotation(rotation):
@@ -319,6 +344,9 @@ def set_base_rotation(rotation):
 def handle_look(rotation):
     global base_rotation
 
+    if base_rotation is None:
+        return
+
     # If yaw angle > or < than some degree, turn left/right
     # If pitch angle > or < than some degree, turn up/down
     # See if you can do it as the same time..?
@@ -326,12 +354,16 @@ def handle_look(rotation):
     yaw_angle = find_yaw_angle(rotation)
     pitch_angle = find_pitch_angle(rotation)
 
-    print(f"Pitch angle: {math.degrees(pitch_angle):.2f} degrees")
-
-    if pitch_angle > math.radians(15):
+    if yaw_angle > math.radians(10):
         print("Turned head right!")
-    elif pitch_angle < math.radians(-15):
+    elif yaw_angle < math.radians(-10):
         print("Turned head left!")
+    
+    # Check for nodding (yes)
+    if pitch_angle > math.radians(10):
+        print("Nodded up!")
+    elif pitch_angle < math.radians(-10):
+        print("Nodded down!")
 
     
 
