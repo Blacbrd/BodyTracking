@@ -358,12 +358,14 @@ def handle_look(rotation):
         print("Turned head right!")
     elif yaw_angle < math.radians(-10):
         print("Turned head left!")
+
+    print(f"Yaw angle: {yaw_angle}")
     
     # Check for nodding (yes)
     if pitch_angle > math.radians(10):
-        print("Nodded up!")
-    elif pitch_angle < math.radians(-10):
         print("Nodded down!")
+    elif pitch_angle < math.radians(-10):
+        print("Nodded up!")
 
     
 
@@ -535,23 +537,23 @@ with mp_pose.Pose(min_detection_confidence=0.6, min_tracking_confidence=0.6) as 
             ear_to_ear_vector = right_ear - left_ear
 
             # Normalises so that magnitude len is 1
-            ear_to_ear_vector_normalised = ear_to_ear_vector / np.linalg.norm(ear_to_ear_vector)
+            X_vector = ear_to_ear_vector / np.linalg.norm(ear_to_ear_vector)
 
             # This gives z plane
             midpoint = (left_ear + right_ear) / 2
             nose_to_mid_vector = midpoint - nose
-            nose_to_mid_vector_normalised = nose_to_mid_vector / np.linalg.norm(nose_to_mid_vector)
+            Z_vector = nose_to_mid_vector / np.linalg.norm(nose_to_mid_vector)
 
             # This gives y plane
-            face_normalised = np.cross(ear_to_ear_vector_normalised, nose_to_mid_vector_normalised)
-            face_normalised = face_normalised / np.linalg.norm(face_normalised)
+            face_vector = np.cross(Z_vector, X_vector)
+            Y_vector = face_vector / np.linalg.norm(face_vector)
 
             # Gives a more accurate, 100% perpendicular z plane 
             # Since the z plane we calculated from coordinates may have noise
-            z_axis = np.cross(face_normalised, ear_to_ear_vector_normalised)
-            nose_to_midpoint_normal = z_axis / np.linalg.norm(z_axis)
+            Z_vector = np.cross(X_vector, Y_vector)
+            Z_vector = Z_vector / np.linalg.norm(Z_vector)
 
-            rotation_matrix = np.column_stack((ear_to_ear_vector_normalised, face_normalised, nose_to_midpoint_normal))
+            rotation_matrix = np.column_stack((X_vector, Y_vector, Z_vector))
             
             # If the base rotation hasn't been set, set it
             if base_rotation is None:
