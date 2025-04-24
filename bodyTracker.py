@@ -317,24 +317,24 @@ def find_yaw_angle(rotation):
 
     # Relative rotation
     rr_quat = multiply_quat(find_quat_from_matrix(rotation), inverse_quat(find_quat_from_matrix(base_rotation)))
+    
     w, x, y, z = rr_quat
-    # Pitch (around Y) calculation
-    sin_pitch = 2 * (w * y - x * z)
-    sin_pitch = np.clip(sin_pitch, -1.0, 1.0)  # Ensure valid arcsin input
-    pitch = math.asin(sin_pitch)
-    return pitch
+    norm = math.sqrt(w*w + x*x + y*y + z*z)
+    w, x, y, z = w/norm, x/norm, y/norm, z/norm
+
+    return 2 * math.atan2(y, w)
 
 def find_pitch_angle(rotation):
     global base_rotation
 
     # Relative rotation
     rr_quat = multiply_quat(find_quat_from_matrix(rotation), inverse_quat(find_quat_from_matrix(base_rotation)))
+    
     w, x, y, z = rr_quat
-    # Roll (around X) calculation
-    sin_roll = 2 * (w * x + y * z)
-    sin_roll = np.clip(sin_roll, -1.0, 1.0)
-    roll = math.asin(sin_roll)
-    return roll
+    norm = math.sqrt(w*w + x*x + y*y + z*z)
+    w, x, y, z = w/norm, x/norm, y/norm, z/norm
+
+    return 2 * math.atan2(x, w)
 
 # -------------------- Camera Movement --------------------
 def set_base_rotation(rotation):
@@ -347,9 +347,8 @@ def handle_look(rotation):
     if base_rotation is None:
         return
 
-    # If yaw angle > or < than some degree, turn left/right
-    # If pitch angle > or < than some degree, turn up/down
-    # See if you can do it as the same time..?
+    # Yaw is "yes"
+    # Pitch is "no"
 
     yaw_angle = find_yaw_angle(rotation)
     pitch_angle = find_pitch_angle(rotation)
@@ -359,13 +358,15 @@ def handle_look(rotation):
     elif yaw_angle < math.radians(-10):
         print("Turned head left!")
 
-    print(f"Yaw angle: {yaw_angle}")
+    print(f"Yaw angle: {math.degrees(yaw_angle)}")
     
     # Check for nodding (yes)
     if pitch_angle > math.radians(10):
         print("Nodded down!")
     elif pitch_angle < math.radians(-10):
         print("Nodded up!")
+    
+    print(f"Pitch angle: {math.degrees(pitch_angle)}")
 
     
 
