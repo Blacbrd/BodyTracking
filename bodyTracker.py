@@ -16,7 +16,8 @@ import math
 
 # Set up for mediapipe
 mp_drawing = mp.solutions.drawing_utils
-mp_pose = mp.solutions.pose
+mp_pose_body = mp.solutions.pose
+mp_hands = mp.solutions.hands
 
 # --- Punch State Machine Variables ---
 left_ready = True
@@ -76,6 +77,9 @@ punch_timer = None
 
 # Amount of seconds. If 2 punches fall within this time frame, the program takes it as mining
 CONSECUTIVE_THRESHOLD = 0.5
+
+# Initially set to body, can be changed to "hands"
+mode = "Body"
 
 def execute_single_punch():
 
@@ -323,7 +327,7 @@ def inverse_quat(q):
 
 def find_yaw_angle(rotation):
     global base_rotation
-    
+
     q_current = find_quat_from_matrix(rotation)
     q_base = find_quat_from_matrix(base_rotation)
     q_rel = multiply_quat(q_current, inverse_quat(q_base))
@@ -428,7 +432,14 @@ speech_thread.start()
 # -------------------- Main Loop with OpenCV & Mediapipe --------------------
 cap = cv2.VideoCapture(0)
 
-with mp_pose.Pose(min_detection_confidence=0.6, min_tracking_confidence=0.6) as pose:
+def body_tracking(pose, frame):
+    pass
+
+def hand_tracking(hands, frame):
+    pass
+
+
+with mp_pose_body.Pose(min_detection_confidence=0.6, min_tracking_confidence=0.6) as pose, mp_hands.Hands(min_detection_confidence=0.6, min_tracking_confidence=0.6) as hands:
     while cap.isOpened():
         ret, frame = cap.read()
         if not ret:
@@ -436,6 +447,13 @@ with mp_pose.Pose(min_detection_confidence=0.6, min_tracking_confidence=0.6) as 
 
         image = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
         image.flags.writeable = False
+
+        if mode == "Body":
+            body_tracking(pose, image)
+        
+        else:
+            hand_tracking(hands, image)
+
         results = pose.process(image)
         image.flags.writeable = True
         image = cv2.cvtColor(image, cv2.COLOR_RGB2BGR)
@@ -449,14 +467,14 @@ with mp_pose.Pose(min_detection_confidence=0.6, min_tracking_confidence=0.6) as 
                         landmark.z]
 
             # Left-side landmarks
-            shoulderL = get_landmark_point(landmarks[mp_pose.PoseLandmark.LEFT_SHOULDER])
-            elbowL    = get_landmark_point(landmarks[mp_pose.PoseLandmark.LEFT_ELBOW])
-            wristL    = get_landmark_point(landmarks[mp_pose.PoseLandmark.LEFT_WRIST])
+            shoulderL = get_landmark_point(landmarks[mp_pose_body.PoseLandmark.LEFT_SHOULDER])
+            elbowL    = get_landmark_point(landmarks[mp_pose_body.PoseLandmark.LEFT_ELBOW])
+            wristL    = get_landmark_point(landmarks[mp_pose_body.PoseLandmark.LEFT_WRIST])
 
             # Right-side landmarks
-            shoulderR = get_landmark_point(landmarks[mp_pose.PoseLandmark.RIGHT_SHOULDER])
-            elbowR    = get_landmark_point(landmarks[mp_pose.PoseLandmark.RIGHT_ELBOW])
-            wristR    = get_landmark_point(landmarks[mp_pose.PoseLandmark.RIGHT_WRIST])
+            shoulderR = get_landmark_point(landmarks[mp_pose_body.PoseLandmark.RIGHT_SHOULDER])
+            elbowR    = get_landmark_point(landmarks[mp_pose_body.PoseLandmark.RIGHT_ELBOW])
+            wristR    = get_landmark_point(landmarks[mp_pose_body.PoseLandmark.RIGHT_WRIST])
 
             # Calculate elbow angles for each arm.
             angleL = int(calculate_angle(shoulderL, elbowL, wristL))
@@ -494,8 +512,8 @@ with mp_pose.Pose(min_detection_confidence=0.6, min_tracking_confidence=0.6) as 
                 placement_ready = True
 
             # --------- Walking (Forward Movement) Feature ----------
-            left_knee = get_landmark_point(landmarks[mp_pose.PoseLandmark.LEFT_KNEE])
-            right_knee = get_landmark_point(landmarks[mp_pose.PoseLandmark.RIGHT_KNEE])
+            left_knee = get_landmark_point(landmarks[mp_pose_body.PoseLandmark.LEFT_KNEE])
+            right_knee = get_landmark_point(landmarks[mp_pose_body.PoseLandmark.RIGHT_KNEE])
 
             if WALK_THRESHOLD_ENABLED:
                 if knee_threshold is None:
@@ -525,9 +543,9 @@ with mp_pose.Pose(min_detection_confidence=0.6, min_tracking_confidence=0.6) as 
             # --------- Looking Feature ----------
 
             # Need normalised coordinates instead of pixel coordinates
-            left_ear = results.pose_landmarks.landmark[mp_pose.PoseLandmark.LEFT_EAR]
-            right_ear = results.pose_landmarks.landmark[mp_pose.PoseLandmark.RIGHT_EAR]
-            nose = results.pose_landmarks.landmark[mp_pose.PoseLandmark.NOSE]
+            left_ear = results.pose_landmarks.landmark[mp_pose_body.PoseLandmark.LEFT_EAR]
+            right_ear = results.pose_landmarks.landmark[mp_pose_body.PoseLandmark.RIGHT_EAR]
+            nose = results.pose_landmarks.landmark[mp_pose_body.PoseLandmark.NOSE]
 
             left_ear = np.array([left_ear.x, left_ear.y, left_ear.z])
             right_ear = np.array([right_ear.x, right_ear.y, right_ear.z])
@@ -569,7 +587,7 @@ with mp_pose.Pose(min_detection_confidence=0.6, min_tracking_confidence=0.6) as 
             punch_hold_active = False
             print("Consecutive punches ended: released left mouse button")
 
-        mp_drawing.draw_landmarks(image, results.pose_landmarks, mp_pose.POSE_CONNECTIONS)
+        mp_drawing.draw_landmarks(image, results.pose_landmarks, mp_pose_body.POSE_CONNECTIONS)
 
         # This handles all of the calibration
         if not command_queue.empty():
