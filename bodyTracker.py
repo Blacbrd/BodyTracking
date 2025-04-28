@@ -411,9 +411,18 @@ def speech_recognition_worker():
             result = json.loads(partial_json)
             text = result.get("partial", "")
 
-        if "calibrate" in text.lower() and ("arm" in text.lower() or "leg" in text.lower()):
+        if "calibrate" in text.lower() and ("arm" in text.lower() or "leg" in text.lower() or "head" in text.lower()):
             print("Voice command detected:", text)
-            command_queue.put("calibrate_arms" if "arm" in text else "calibrate_legs")
+
+            command = ""
+            if "arm" in text:
+                command = "calibrate_arms"
+            elif "head" in text:
+                command = "calibrate_head"
+            else:
+                command = "calibrate_legs"
+
+            command_queue.put(command)
             time.sleep(0.2)
             recognizer.Reset()
 
@@ -433,7 +442,188 @@ speech_thread.start()
 cap = cv2.VideoCapture(0)
 
 def body_tracking(pose, frame):
-    pass
+    # Bring in all globals that are read or written
+    global left_ready, right_ready
+    global left_punch_display_counter, right_punch_display_counter
+    global placement_ready
+    global knee_threshold
+    global left_knee_is_up, right_knee_is_up, left_knee_was_up, right_knee_was_up
+    global last_knee_raised, step_count, last_step_time, walk_hold_active
+    global jump_ready
+    global base_rotation
+    global punch_hold_active, punch_last_time
+
+    # Process the pose on the RGB frame
+    results = pose.process(frame)
+
+    # Prepare image for drawing and OpenCV operations
+    frame.flags.writeable = True
+    image = cv2.cvtColor(frame, cv2.COLOR_RGB2BGR)
+
+    try:
+        landmarks = results.pose_landmarks.landmark
+
+        def get_landmark_point(landmark):
+            return [int(landmark.x * image.shape[1]),
+                    int(landmark.y * image.shape[0]),
+                    landmark.z]
+
+        # Left-side landmarks
+        shoulderL = get_landmark_point(landmarks[mp_pose_body.PoseLandmark.LEFT_SHOULDER])
+        elbowL    = get_landmark_point(landmarks[mp_pose_body.PoseLandmark.LEFT_ELBOW])
+        wristL    = get_landmark_point(landmarks[mp_pose_body.PoseLandmark.LEFT_WRIST])
+
+        # Right-side landmarks
+        shoulderR = get_landmark_point(landmarks[mp_pose_body.PoseLandmark.RIGHT_SHOULDER])
+        elbowR    = get_landmark_point(landmarks[mp_pose_body.PoseLandmark.RIGHT_ELBOW])
+        wristR    = get_landmark_point(landmarks[mp_pose_body.PoseLandmark.RIGHT_WRIST])
+
+        # Calculate elbow angles for each arm.
+        angleL = int(calculate_angle(shoulderL, elbowL, wristL))
+        angleR = int(calculate_angle(shoulderR, elbowR, wristR))
+
+        cv2.putText(image, f'{angleL}', (elbowL[0] - 30, elbowL[1] - 10),
+                    cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 0), 2, cv2.LINE_AA)
+        cv2.putText(image, f'{angleR}', (elbowR[0] - 30, elbowR[1] - 10),
+                    cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 0), 2, cv2.LINE_AA)
+
+        # --------- Punch Detection State Machine ----------
+        if angleL < SMALL_ANGLE_THRESHOLD:
+            left_ready = True
+        if left_ready and angleL > LARGE_ANGLE_THRESHOLD:
+            print("Left punch detected!")
+            left_ready = False
+            left_punch_display_counter = DISPLAY_FRAMES
+            handle_punch()
+
+        if angleR < SMALL_ANGLE_THRESHOLD:
+            right_ready = True
+        if right_ready and angleR > LARGE_ANGLE_THRESHOLD:
+            print("Right punch detected!")
+            right_ready = False
+            right_punch_display_counter = DISPLAY_FRAMES
+            handle_punch()
+
+        # --------- Block Placement Feature ----------
+        if wristR[0] < wristL[0]:
+            if placement_ready:
+                pyautogui.click(button='right')
+                print("Block placed via wrist crossing!")
+                placement_ready = False
+        else:
+            placement_ready = True
+
+        # --------- Walking (Forward Movement) Feature ----------
+        left_knee = get_landmark_point(landmarks[mp_pose_body.PoseLandmark.LEFT_KNEE])
+        right_knee = get_landmark_point(landmarks[mp_pose_body.PoseLandmark.RIGHT_KNEE])
+
+        if WALK_THRESHOLD_ENABLED:
+            if knee_threshold is None:
+                knee_threshold = find_horizontal_threshold(left_knee[1])
+
+            # Draw the threshold line
+            cv2.line(image, (0, knee_threshold), (image.shape[1], knee_threshold), (255, 0, 255), 2)
+
+            # Handle the walking based on knee positions
+            handle_walking(left_knee[1], right_knee[1], knee_threshold)
+
+            # Display walking status
+            if walk_hold_active:
+                cv2.putText(image, "WALKING", (50, 110),
+                            cv2.FONT_HERSHEY_SIMPLEX, 1, (255, 0, 255), 2, cv2.LINE_AA)
+            elif left_knee_is_up or right_knee_is_up:
+                cv2.putText(image, "STEP", (50, 110),
+                            cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 255), 2, cv2.LINE_AA)
+
+        # --------- Jumping Feature ----------
+        if left_knee[1] < knee_threshold and right_knee[1] < knee_threshold:
+            if jump_ready:
+                handle_jump_event()
+        else:
+            jump_ready = True
+
+        # --------- Looking Feature ----------
+        # Need normalised coordinates instead of pixel coordinates
+        left_ear = results.pose_landmarks.landmark[mp_pose_body.PoseLandmark.LEFT_EAR]
+        right_ear = results.pose_landmarks.landmark[mp_pose_body.PoseLandmark.RIGHT_EAR]
+        nose = results.pose_landmarks.landmark[mp_pose_body.PoseLandmark.NOSE]
+
+        left_ear = np.array([left_ear.x, left_ear.y, left_ear.z])
+        right_ear = np.array([right_ear.x, right_ear.y, right_ear.z])
+        nose = np.array([nose.x, nose.y, nose.z])
+
+        # This gives x plane
+        ear_to_ear_vector = right_ear - left_ear
+
+        # Normalises so that magnitude len is 1
+        X_vector = ear_to_ear_vector / np.linalg.norm(ear_to_ear_vector)
+
+        # This gives z plane
+        midpoint = (left_ear + right_ear) / 2
+        nose_to_mid_vector = midpoint - nose
+        Z_vector = nose_to_mid_vector / np.linalg.norm(nose_to_mid_vector)
+
+        # This gives y plane
+        face_vector = np.cross(Z_vector, X_vector)
+        Y_vector = face_vector / np.linalg.norm(face_vector)
+
+        # Gives a more accurate, 100% perpendicular z plane 
+        # Since the z plane we calculated from coordinates may have noise
+        Z_vector = np.cross(X_vector, Y_vector)
+        Z_vector = Z_vector / np.linalg.norm(Z_vector)
+
+        rotation_matrix = np.column_stack((X_vector, Y_vector, Z_vector))
+
+        # If the base rotation hasn't been set, set it
+        if base_rotation is None:
+            base_rotation = rotation_matrix
+
+        handle_look(rotation_matrix)
+
+    except Exception as e:
+        print("Error processing pose:", e)
+
+    # Release mouse if consecutive punching ended
+    if punch_hold_active and (time.time() - punch_last_time > CONSECUTIVE_THRESHOLD):
+        pyautogui.mouseUp(button='left')
+        punch_hold_active = False
+        print("Consecutive punches ended: released left mouse button")
+
+    # Draw pose landmarks on the image
+    mp_drawing.draw_landmarks(image, results.pose_landmarks, mp_pose_body.POSE_CONNECTIONS)
+
+    # This handles all of the calibration
+    if not command_queue.empty():
+        command = command_queue.get()
+        if command == "calibrate_arms":
+            try:
+                calib_left = wristL[2]
+                calib_right = wristR[2]
+                threading.Thread(target=calibrate_arms, args=(calib_left, calib_right), daemon=True).start()
+            except Exception as e:
+                print("Calibration error:", e)
+        elif command == "calibrate_legs":
+            try:
+                if 'left_knee' in locals() and left_knee is not None:
+                    knee_threshold = find_horizontal_threshold(left_knee[1])
+                    print("Knee threshold recalibrated. New threshold:", knee_threshold)
+                else:
+                    print("Knee landmarks not detected. Cannot recalibrate threshold.")
+            except Exception as e:
+                print("Recalibration error:", e)
+        
+        elif command == "calibrate_head":
+            try:
+                base_rotation = rotation_matrix
+                print(f"Successfully calibrated head, new rotation: {base_rotation}")
+            except Exception as e:
+                print("Calibration error:", e)
+
+    # Show the image and handle quit key
+    cv2.imshow("Body Recognition", image)
+    if cv2.waitKey(10) & 0xFF == ord("q"):
+        # Let the main loop handle cleanup and exit
+        return
 
 def hand_tracking(hands, frame):
     pass
@@ -453,165 +643,6 @@ with mp_pose_body.Pose(min_detection_confidence=0.6, min_tracking_confidence=0.6
         
         else:
             hand_tracking(hands, image)
-
-        results = pose.process(image)
-        image.flags.writeable = True
-        image = cv2.cvtColor(image, cv2.COLOR_RGB2BGR)
-
-        try:
-            landmarks = results.pose_landmarks.landmark
-
-            def get_landmark_point(landmark):
-                return [int(landmark.x * frame.shape[1]),
-                        int(landmark.y * frame.shape[0]),
-                        landmark.z]
-
-            # Left-side landmarks
-            shoulderL = get_landmark_point(landmarks[mp_pose_body.PoseLandmark.LEFT_SHOULDER])
-            elbowL    = get_landmark_point(landmarks[mp_pose_body.PoseLandmark.LEFT_ELBOW])
-            wristL    = get_landmark_point(landmarks[mp_pose_body.PoseLandmark.LEFT_WRIST])
-
-            # Right-side landmarks
-            shoulderR = get_landmark_point(landmarks[mp_pose_body.PoseLandmark.RIGHT_SHOULDER])
-            elbowR    = get_landmark_point(landmarks[mp_pose_body.PoseLandmark.RIGHT_ELBOW])
-            wristR    = get_landmark_point(landmarks[mp_pose_body.PoseLandmark.RIGHT_WRIST])
-
-            # Calculate elbow angles for each arm.
-            angleL = int(calculate_angle(shoulderL, elbowL, wristL))
-            angleR = int(calculate_angle(shoulderR, elbowR, wristR))
-
-            cv2.putText(image, f'{angleL}', (elbowL[0] - 30, elbowL[1] - 10),
-                        cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 0), 2, cv2.LINE_AA)
-            cv2.putText(image, f'{angleR}', (elbowR[0] - 30, elbowR[1] - 10),
-                        cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 0), 2, cv2.LINE_AA)
-
-            # --------- Punch Detection State Machine ----------
-            if angleL < SMALL_ANGLE_THRESHOLD:
-                left_ready = True
-            if left_ready and angleL > LARGE_ANGLE_THRESHOLD:
-                print("Left punch detected!")
-                left_ready = False
-                left_punch_display_counter = DISPLAY_FRAMES
-                handle_punch()
-
-            if angleR < SMALL_ANGLE_THRESHOLD:
-                right_ready = True
-            if right_ready and angleR > LARGE_ANGLE_THRESHOLD:
-                print("Right punch detected!")
-                right_ready = False
-                right_punch_display_counter = DISPLAY_FRAMES
-                handle_punch()
-
-            # --------- Block Placement Feature ----------
-            if wristR[0] < wristL[0]:
-                if placement_ready:
-                    pyautogui.click(button='right')
-                    print("Block placed via wrist crossing!")
-                    placement_ready = False
-            else:
-                placement_ready = True
-
-            # --------- Walking (Forward Movement) Feature ----------
-            left_knee = get_landmark_point(landmarks[mp_pose_body.PoseLandmark.LEFT_KNEE])
-            right_knee = get_landmark_point(landmarks[mp_pose_body.PoseLandmark.RIGHT_KNEE])
-
-            if WALK_THRESHOLD_ENABLED:
-                if knee_threshold is None:
-                    knee_threshold = find_horizontal_threshold(left_knee[1])
-                    
-                # Draw the threshold line
-                cv2.line(image, (0, knee_threshold), (frame.shape[1], knee_threshold), (255, 0, 255), 2)
-                
-                # Handle the walking based on knee positions
-                handle_walking(left_knee[1], right_knee[1], knee_threshold)
-                
-                # Display walking status
-                if walk_hold_active:
-                    cv2.putText(image, "WALKING", (50, 110),
-                                cv2.FONT_HERSHEY_SIMPLEX, 1, (255, 0, 255), 2, cv2.LINE_AA)
-                elif left_knee_is_up or right_knee_is_up:
-                    cv2.putText(image, "STEP", (50, 110),
-                                cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 255), 2, cv2.LINE_AA)
-
-            # --------- Jumping Feature ----------
-            if left_knee[1] < knee_threshold and right_knee[1] < knee_threshold:
-                if jump_ready:
-                    handle_jump_event()
-            else:
-                jump_ready = True
-            
-            # --------- Looking Feature ----------
-
-            # Need normalised coordinates instead of pixel coordinates
-            left_ear = results.pose_landmarks.landmark[mp_pose_body.PoseLandmark.LEFT_EAR]
-            right_ear = results.pose_landmarks.landmark[mp_pose_body.PoseLandmark.RIGHT_EAR]
-            nose = results.pose_landmarks.landmark[mp_pose_body.PoseLandmark.NOSE]
-
-            left_ear = np.array([left_ear.x, left_ear.y, left_ear.z])
-            right_ear = np.array([right_ear.x, right_ear.y, right_ear.z])
-            nose = np.array([nose.x, nose.y, nose.z])
-
-            # This gives x plane
-            ear_to_ear_vector = right_ear - left_ear
-
-            # Normalises so that magnitude len is 1
-            X_vector = ear_to_ear_vector / np.linalg.norm(ear_to_ear_vector)
-
-            # This gives z plane
-            midpoint = (left_ear + right_ear) / 2
-            nose_to_mid_vector = midpoint - nose
-            Z_vector = nose_to_mid_vector / np.linalg.norm(nose_to_mid_vector)
-
-            # This gives y plane
-            face_vector = np.cross(Z_vector, X_vector)
-            Y_vector = face_vector / np.linalg.norm(face_vector)
-
-            # Gives a more accurate, 100% perpendicular z plane 
-            # Since the z plane we calculated from coordinates may have noise
-            Z_vector = np.cross(X_vector, Y_vector)
-            Z_vector = Z_vector / np.linalg.norm(Z_vector)
-
-            rotation_matrix = np.column_stack((X_vector, Y_vector, Z_vector))
-            
-            # If the base rotation hasn't been set, set it
-            if base_rotation is None:
-                base_rotation = rotation_matrix
-            
-            handle_look(rotation_matrix)
-
-        except Exception as e:
-            print("Error processing pose:", e)
-
-        if punch_hold_active and (time.time() - punch_last_time > CONSECUTIVE_THRESHOLD):
-            pyautogui.mouseUp(button='left')
-            punch_hold_active = False
-            print("Consecutive punches ended: released left mouse button")
-
-        mp_drawing.draw_landmarks(image, results.pose_landmarks, mp_pose_body.POSE_CONNECTIONS)
-
-        # This handles all of the calibration
-        if not command_queue.empty():
-            command = command_queue.get()
-            if command == "calibrate_arms":
-                try:
-                    calib_left = wristL[2]
-                    calib_right = wristR[2]
-                    threading.Thread(target=calibrate_arms, args=(calib_left, calib_right), daemon=True).start()
-                except Exception as e:
-                    print("Calibration error:", e)
-            elif command == "calibrate_legs":
-                try:
-                    if 'left_knee' in locals() and left_knee is not None:
-                        knee_threshold = find_horizontal_threshold(left_knee[1])
-                        print("Knee threshold recalibrated. New threshold:", knee_threshold)
-                    else:
-                        print("Knee landmarks not detected. Cannot recalibrate threshold.")
-                except Exception as e:
-                    print("Recalibration error:", e)
-
-        cv2.imshow("Body Recognition", image)
-        if cv2.waitKey(10) & 0xFF == ord("q"):
-            break
 
 cap.release()
 cv2.destroyAllWindows()
