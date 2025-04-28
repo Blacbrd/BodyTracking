@@ -10,6 +10,7 @@ import pyaudio
 from playsound import playsound
 import time
 import pyautogui
+import sys
 import math
 
 # -------------------- Global Setup --------------------
@@ -619,13 +620,40 @@ def body_tracking(pose, frame):
             except Exception as e:
                 print("Calibration error:", e)
 
-    # Show the image and handle quit key
+    # Show the image
     cv2.imshow("Body Recognition", image)
+    # *** If user presses 'q', clean up everything and exit ***
     if cv2.waitKey(10) & 0xFF == ord("q"):
-        # Let the main loop handle cleanup and exit
-        return
+        # stop camera
+        cap.release()
+        # close OpenCV windows
+        cv2.destroyAllWindows()
+        # stop audio stream
+        stream.stop_stream()
+        stream.close()
+        p.terminate()
+        # exit the process
+        sys.exit(0)
+    
+    return "Body"
 
 def hand_tracking(hands, frame):
+
+    # What I want:
+    # * A box should appear which shows where the menu is on open cv
+    # * Should be able to recalibrate this box where the cursor finger is in the middle
+    # * Depending on where the hand is in the box depends where cursor is
+    # * Should be able to swap from left to right handed
+    # * Right hand left click, left hand right click
+    # * Box could scale with z axis
+
+    # * Implement it so that the mode changes based on screen recognition
+    # * So, if the menu is on screen, it changes to hand mode
+    # * When user hides hands, back to body mode
+    # * However, we can still have voice commands in case it goes wrong
+
+    
+
     pass
 
 
@@ -639,10 +667,10 @@ with mp_pose_body.Pose(min_detection_confidence=0.6, min_tracking_confidence=0.6
         image.flags.writeable = False
 
         if mode == "Body":
-            body_tracking(pose, image)
-        
+            mode = body_tracking(pose, image)
+
         else:
-            hand_tracking(hands, image)
+            mode = hand_tracking(hands, image)
 
 cap.release()
 cv2.destroyAllWindows()
