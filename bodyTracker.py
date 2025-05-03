@@ -389,7 +389,7 @@ vosk_model_path = r"C:\Users\blacb\Downloads\vosk-model-en-us-0.22-lgraph\vosk-m
 model = vosk.Model(vosk_model_path)
 
 # These are the only words that will be recognised
-words = ["recalibrate", "calibrate", "arms", "arm", "legs", "leg", "inventory", "open", "close", "opened", "closed", "head"]
+words = ["recalibrate", "calibrate", "arms", "arm", "legs", "leg", "inventory", "open", "close", "opened", "closed", "head", "change", "hand", "body"]
 grammar = json.dumps(words)
 
 audio_queue = queue.Queue()
@@ -416,9 +416,9 @@ def speech_recognition_worker():
             print("Voice command detected:", text)
 
             command = ""
-            if "arm" in text:
+            if "arm" in text.lower():
                 command = "calibrate_arms"
-            elif "head" in text:
+            elif "head" in text.lower():
                 command = "calibrate_head"
             else:
                 command = "calibrate_legs"
@@ -426,6 +426,23 @@ def speech_recognition_worker():
             command_queue.put(command)
             time.sleep(0.2)
             recognizer.Reset()
+        
+        if "change" in text.lower() and ("hand" in text.lower() or "body" in text.lower()):
+            
+            if "hand" in text.lower():
+                print("Voice command detected:", text)
+
+                command_queue.put("change_hand")
+                time.sleep(0.2)
+                recognizer.Reset()
+
+            elif "body" in text.lower():
+                print("Voice command detected:", text)
+
+                command_queue.put("change_body")
+                time.sleep(0.2)
+                recognizer.Reset()
+
 
 p = pyaudio.PyAudio()
 stream = p.open(format=pyaudio.paInt16,
@@ -619,23 +636,11 @@ def body_tracking(pose, frame):
                 print(f"Successfully calibrated head, new rotation: {base_rotation}")
             except Exception as e:
                 print("Calibration error:", e)
-
-    # Show the image
-    cv2.imshow("Body Recognition", image)
-    # *** If user presses 'q', clean up everything and exit ***
-    if cv2.waitKey(10) & 0xFF == ord("q"):
-        # stop camera
-        cap.release()
-        # close OpenCV windows
-        cv2.destroyAllWindows()
-        # stop audio stream
-        stream.stop_stream()
-        stream.close()
-        p.terminate()
-        # exit the process
-        sys.exit(0)
+        
+        elif command == "change_hand":
+            return "Hand", image
     
-    return "Body"
+    return "Body", image
 
 def hand_tracking(hands, frame):
 
@@ -652,9 +657,38 @@ def hand_tracking(hands, frame):
     # * When user hides hands, back to body mode
     # * However, we can still have voice commands in case it goes wrong
 
-    
+    results = hands.process(frame)
 
-    pass
+    # Make it writeable again and convert to BGR for OpenCV
+    frame.flags.writeable = True
+    image = cv2.cvtColor(frame, cv2.COLOR_RGB2BGR)
+
+    if results.multi_hand_landmarks:
+        h, w, _ = image.shape
+        for hand_landmarks in results.multi_hand_landmarks:
+            # draw skeleton + points on the BGR image
+            mp_drawing.draw_landmarks(
+                image,
+                hand_landmarks,
+                mp_hands.HAND_CONNECTIONS,
+                mp_drawing.DrawingSpec(color=(0,255,0), thickness=2, circle_radius=4),
+                mp_drawing.DrawingSpec(color=(0,0,255), thickness=2)
+            )
+
+            # draw each landmark index
+            for idx, lm in enumerate(hand_landmarks.landmark):
+                px, py = int(lm.x * w), int(lm.y * h)
+                cv2.putText(image, str(idx), (px - 10, py + 10),
+                            cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255,0,0), 1)
+
+
+    # This handles all of the calibration
+    if not command_queue.empty():
+        command = command_queue.get()
+        if command == "change_body":
+            return "Body", image
+
+    return "Hand", image
 
 
 with mp_pose_body.Pose(min_detection_confidence=0.6, min_tracking_confidence=0.6) as pose, mp_hands.Hands(min_detection_confidence=0.6, min_tracking_confidence=0.6) as hands:
@@ -667,14 +701,17 @@ with mp_pose_body.Pose(min_detection_confidence=0.6, min_tracking_confidence=0.6
         image.flags.writeable = False
 
         if mode == "Body":
-            mode = body_tracking(pose, image)
+            mode, output = body_tracking(pose, image)
 
         else:
-            mode = hand_tracking(hands, image)
+            mode, output = hand_tracking(hands, image)
+        
+
+        cv2.imshow("Minecraft body tracking", output)
+        if cv2.waitKey(1) & 0xFF == ord('q'):
+            break
 
 cap.release()
 cv2.destroyAllWindows()
-
-stream.stop_stream()
-stream.close()
-p.terminate()
+stream.stop_stream(); stream.close(); p.terminate()
+sys.exit(0)
