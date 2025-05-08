@@ -377,6 +377,10 @@ def handle_look(rotation):
 base_index_finger_x = None
 base_index_finger_y = None
 
+# Depending on which hand is dominant depends what each of them do
+# Right by default
+DOMINANT_HAND = "Right"
+
 def set_index_finger_pos(x, y):
     global base_index_finger_x, base_index_finger_y
     base_index_finger_x = x
