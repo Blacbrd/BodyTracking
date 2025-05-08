@@ -68,7 +68,7 @@ placement_ready = True
 # Only need the left ear as if it moves closer to the right ear it'll just be >= 100%
 base_rotation = None
 
-# -------------------- Punch to Minecraft Automation --------------------
+# -------------------- Punch Logic --------------------
 
 # This helps determine whether the last punch and current punch were within the CONSECUTIVE_THRESHOLD time
 punch_last_time = 0
@@ -128,7 +128,7 @@ def handle_punch():
         # Checks for more consecutive punches
         punch_last_time = now
 
-# -------------------- Walking Automation Functions --------------------
+# -------------------- Walking Automation --------------------
 
 # Function to release the walk key when walking ends
 def release_walk():
@@ -372,7 +372,15 @@ def handle_look(rotation):
     elif pitch_angle < math.radians(-3):
         print("Nodded up!")
 
-    
+# -------------------- Mouse Movement Hands --------------------
+
+base_index_finger_x = None
+base_index_finger_y = None
+
+def set_index_finger_pos(x, y):
+    global base_index_finger_x, base_index_finger_y
+    base_index_finger_x = x
+    base_index_finger_y = y
 
 # This function now only plays the sound for arms calibration.
 # What I want it to do, is to find the middle of the body, and if the arms go above that threshold, then they can punch
@@ -389,7 +397,25 @@ vosk_model_path = r"C:\Users\blacb\Downloads\vosk-model-en-us-0.22-lgraph\vosk-m
 model = vosk.Model(vosk_model_path)
 
 # These are the only words that will be recognised
-words = ["recalibrate", "calibrate", "arms", "arm", "legs", "leg", "inventory", "open", "close", "opened", "closed", "head", "change", "hand", "body"]
+words = [
+        "recalibrate", 
+         "calibrate", 
+         "arms", 
+         "arm", 
+         "legs", 
+         "leg", 
+         "inventory", 
+         "open", 
+         "close", 
+         "opened", 
+         "closed", 
+         "head", 
+         "change", 
+         "hand", 
+         "body", 
+         "box"
+         ]
+
 grammar = json.dumps(words)
 
 audio_queue = queue.Queue()
@@ -412,7 +438,7 @@ def speech_recognition_worker():
             result = json.loads(partial_json)
             text = result.get("partial", "")
 
-        if "calibrate" in text.lower() and ("arm" in text.lower() or "leg" in text.lower() or "head" in text.lower()):
+        if "calibrate" in text.lower() and ("arm" in text.lower() or "leg" in text.lower() or "head" in text.lower() or "box" in text.lower()):
             print("Voice command detected:", text)
 
             command = ""
@@ -420,7 +446,9 @@ def speech_recognition_worker():
                 command = "calibrate_arms"
             elif "head" in text.lower():
                 command = "calibrate_head"
-            else:
+            elif "box" in text.lower():
+                command = "calibrate_box"
+            elif "leg" in text.lower():
                 command = "calibrate_legs"
 
             command_queue.put(command)
@@ -643,6 +671,7 @@ def body_tracking(pose, frame):
     return "Body", image
 
 def hand_tracking(hands, frame):
+    global base_index_finger_x, base_index_finger_y
 
     # What I want:
     # * A box should appear which shows where the menu is on open cv
@@ -671,7 +700,7 @@ def hand_tracking(hands, frame):
                 image,
                 hand_landmarks,
                 mp_hands.HAND_CONNECTIONS,
-                mp_drawing.DrawingSpec(color=(0,255,0), thickness=2, circle_radius=4),
+                mp_drawing.DrawingSpec(color=(0,255,0), thickness=2, circle_radius=2),
                 mp_drawing.DrawingSpec(color=(0,0,255), thickness=2)
             )
 
@@ -680,13 +709,45 @@ def hand_tracking(hands, frame):
                 px, py = int(lm.x * w), int(lm.y * h)
                 cv2.putText(image, str(idx), (px - 10, py + 10),
                             cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255,0,0), 1)
+        
+        index_finger = results.multi_hand_landmarks[0].landmark[8]
+        if base_index_finger_x == None or base_index_finger_y == None:
+            base_index_finger_x = int(index_finger.x * w)
+            base_index_finger_y = int(index_finger.y * h)
 
+        # This is where we can change how big the rectangle is gonna be
+        rect_w = 200
+        rect_h = 100
+
+        # Makes it so that the rectangle appears around the centre of the finger
+        rx1 = base_index_finger_x - rect_w // 2
+        ry1 = base_index_finger_y - rect_h // 2
+
+        # clamp so rectangle stays fully on screen:
+        if rx1 < 0:
+            rx1 = 0
+        elif rx1 + rect_w > w:
+            rx1 = w - rect_w
+
+        if ry1 < 0:
+            ry1 = 0
+        elif ry1 + rect_h > h:
+            ry1 = h - rect_h
+
+        # bottom‑right corner = top‑left + size
+        rx2 = rx1 + rect_w
+        ry2 = ry1 + rect_h
+
+        cv2.rectangle(image, (rx1, ry1), (rx2, ry2), (0, 255, 0), 2)
 
     # This handles all of the calibration
     if not command_queue.empty():
         command = command_queue.get()
         if command == "change_body":
             return "Body", image
+        elif command == "calibrate_box":
+            if index_finger:
+                set_index_finger_pos(int(index_finger.x * w), int(index_finger.y * h))
 
     return "Hand", image
 
