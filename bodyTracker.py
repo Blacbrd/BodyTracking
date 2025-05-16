@@ -10,6 +10,7 @@ import pyaudio
 from playsound import playsound
 import time
 import pyautogui
+import screeninfo
 import sys
 import math
 
@@ -378,8 +379,9 @@ base_index_finger_x = None
 base_index_finger_y = None
 
 # Depending on which hand is dominant depends what each of them do
-# Right by default
+# Right dominant and Left non dominant by default
 DOMINANT_HAND = "Right"
+NON_DOMINANT_HAND = "Left"
 
 def set_index_finger_pos(x, y):
     global base_index_finger_x, base_index_finger_y
@@ -696,9 +698,10 @@ def hand_tracking(hands, frame):
     frame.flags.writeable = True
     image = cv2.cvtColor(frame, cv2.COLOR_RGB2BGR)
 
-    if results.multi_hand_landmarks:
+    if results.multi_hand_landmarks and results.multi_handedness:
         h, w, _ = image.shape
-        for hand_landmarks in results.multi_hand_landmarks:
+        for hand_landmarks, hand_handedness in zip(results.multi_hand_landmarks,
+                                                results.multi_handedness):
             # draw skeleton + points on the BGR image
             mp_drawing.draw_landmarks(
                 image,
@@ -714,10 +717,22 @@ def hand_tracking(hands, frame):
                 cv2.putText(image, str(idx), (px - 10, py + 10),
                             cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255,0,0), 1)
         
-        index_finger = results.multi_hand_landmarks[0].landmark[8]
+        label = hand_handedness.classification[0].label
+        
+        if label == DOMINANT_HAND:
+            index_finger = results.multi_hand_landmarks[0].landmark[8]
+        else:
+            if len(results.multi_hand_landmarks) > 1:
+                index_finger = results.multi_hand_landmarks[1].landmark[8]
+            else:
+                index_finger = results.multi_hand_landmarks[0].landmark[8]
+
+        cur_index_finger_x = int(index_finger.x * w)
+        cur_index_finger_y = int(index_finger.y * h)
+
         if base_index_finger_x == None or base_index_finger_y == None:
-            base_index_finger_x = int(index_finger.x * w)
-            base_index_finger_y = int(index_finger.y * h)
+            base_index_finger_x = cur_index_finger_x
+            base_index_finger_y = cur_index_finger_y
 
         # This is where we can change how big the rectangle is gonna be
         rect_w = 200
@@ -743,6 +758,8 @@ def hand_tracking(hands, frame):
         ry2 = ry1 + rect_h
 
         cv2.rectangle(image, (rx1, ry1), (rx2, ry2), (0, 255, 0), 2)
+
+
 
     # This handles all of the calibration
     if not command_queue.empty():
