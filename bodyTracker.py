@@ -753,11 +753,20 @@ def hand_tracking(hands, frame):
         elif ry1 + rect_h > h:
             ry1 = h - rect_h
 
-        # bottom‑right corner = top‑left + size
+        # top right = bottom left + width and height
         rx2 = rx1 + rect_w
         ry2 = ry1 + rect_h
 
         cv2.rectangle(image, (rx1, ry1), (rx2, ry2), (0, 255, 0), 2)
+
+        # Finger in rectangle -> mouse on screen
+
+        # Get dimensions of screen
+        # Compare it to the square
+        # Do Screen width / square width
+        # Do screen height / square height
+        # That's your multiplier for both
+        # handx*multx , handy*multy = mousePosx, mousePosy
 
 
 
