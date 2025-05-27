@@ -16,6 +16,9 @@ import math
 
 # -------------------- Global Setup --------------------
 
+# Disable fail safe for pyautogui to prevent program crashing when mouse moved to bottom left
+pyaudio.FAILSAFE = False
+
 # Set up for mediapipe
 mp_drawing = mp.solutions.drawing_utils
 mp_pose_body = mp.solutions.pose
@@ -82,6 +85,21 @@ CONSECUTIVE_THRESHOLD = 0.5
 
 # Initially set to body, can be changed to "hands"
 mode = "Body"
+
+# Checks for the monitors and gets width and height
+monitors = screeninfo.get_monitors()
+if len(monitors) >= 2:
+    monitor = monitors[1]
+else:
+    monitor = monitors[0]
+
+MONITOR_WIDTH = monitor.width
+MONITOR_HEIGHT = monitor.height
+
+# NOTE: DEBUG DELETE LATER -------------------------------------------------------------------------
+print(f"Amount of monitors detected: {len(monitors)}")
+print(f"Monitor width: {MONITOR_WIDTH}")
+print(f"Monitor height: {MONITOR_HEIGHT}")
 
 def execute_single_punch():
 
@@ -387,6 +405,17 @@ def set_index_finger_pos(x, y):
     global base_index_finger_x, base_index_finger_y
     base_index_finger_x = x
     base_index_finger_y = y
+
+mouse_queue = queue.Queue()
+
+def mouse_worker():
+    while True:
+        x, y = mouse_queue.get()
+        pyautogui.moveTo(x, y, duration=0)
+        mouse_queue.task_done()
+
+mouse_thread = threading.Thread(target=mouse_worker, daemon=True)
+mouse_thread.start()
 
 # This function now only plays the sound for arms calibration.
 # What I want it to do, is to find the middle of the body, and if the arms go above that threshold, then they can punch
@@ -761,13 +790,18 @@ def hand_tracking(hands, frame):
 
         # Finger in rectangle -> mouse on screen
 
-        # Get dimensions of screen
-        # Compare it to the square
-        # Do Screen width / square width
-        # Do screen height / square height
-        # That's your multiplier for both
-        # handx*multx , handy*multy = mousePosx, mousePosy
+        multiply_x = MONITOR_WIDTH / rect_w
+        multiply_y = MONITOR_HEIGHT / rect_h
 
+        # Move mouse only if index finger inside the box
+        if rx1 <= cur_index_finger_x <= rx2 and ry1 <= cur_index_finger_y <= ry2:
+
+            # Mirrors right and left to account for mirrored OpenCV view
+            mouse_x = int((rx2 - cur_index_finger_x) * multiply_x)
+            mouse_y = int((cur_index_finger_y - ry1) * multiply_y)
+
+            # Puts on a queue with threading to prevent loss of FPS
+            mouse_queue.put((mouse_x, mouse_y))
 
 
     # This handles all of the calibration
