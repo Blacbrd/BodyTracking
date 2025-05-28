@@ -88,13 +88,16 @@ mode = "Body"
 
 # Checks for the monitors and gets width and height
 monitors = screeninfo.get_monitors()
+
 if len(monitors) >= 2:
     monitor = monitors[1]
 else:
     monitor = monitors[0]
 
-MONITOR_WIDTH = monitor.width
+MONITOR_WIDTH = monitor.width 
 MONITOR_HEIGHT = monitor.height
+
+MONITOR_WIDTH_OFFSET = monitor.x
 
 # NOTE: DEBUG DELETE LATER -------------------------------------------------------------------------
 print(f"Amount of monitors detected: {len(monitors)}")
@@ -799,6 +802,8 @@ def hand_tracking(hands, frame):
             # Mirrors right and left to account for mirrored OpenCV view
             mouse_x = int((rx2 - cur_index_finger_x) * multiply_x)
             mouse_y = int((cur_index_finger_y - ry1) * multiply_y)
+
+            mouse_x += MONITOR_WIDTH_OFFSET
 
             # Puts on a queue with threading to prevent loss of FPS
             mouse_queue.put((mouse_x, mouse_y))
