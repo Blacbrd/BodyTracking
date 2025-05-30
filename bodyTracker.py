@@ -13,6 +13,7 @@ import pyautogui
 import screeninfo
 import sys
 import math
+from pynput.mouse import Controller
 
 # -------------------- Global Setup --------------------
 
@@ -98,6 +99,9 @@ MONITOR_WIDTH = monitor.width
 MONITOR_HEIGHT = monitor.height
 
 MONITOR_WIDTH_OFFSET = monitor.x
+
+# Mouse for camera movement and menu management
+mouse = Controller()
 
 # NOTE: DEBUG DELETE LATER -------------------------------------------------------------------------
 print(f"Amount of monitors detected: {len(monitors)}")
@@ -408,17 +412,6 @@ def set_index_finger_pos(x, y):
     global base_index_finger_x, base_index_finger_y
     base_index_finger_x = x
     base_index_finger_y = y
-
-mouse_queue = queue.Queue()
-
-def mouse_worker():
-    while True:
-        x, y = mouse_queue.get()
-        pyautogui.moveTo(x, y, duration=0)
-        mouse_queue.task_done()
-
-mouse_thread = threading.Thread(target=mouse_worker, daemon=True)
-mouse_thread.start()
 
 # This function now only plays the sound for arms calibration.
 # What I want it to do, is to find the middle of the body, and if the arms go above that threshold, then they can punch
@@ -805,9 +798,7 @@ def hand_tracking(hands, frame):
 
             mouse_x += MONITOR_WIDTH_OFFSET
 
-            # Puts on a queue with threading to prevent loss of FPS
-            mouse_queue.put((mouse_x, mouse_y))
-
+            mouse.position = (mouse_x, mouse_y)
 
     # This handles all of the calibration
     if not command_queue.empty():
