@@ -73,17 +73,6 @@ placement_ready = True
 # Only need the left ear as if it moves closer to the right ear it'll just be >= 100%
 base_rotation = None
 
-# -------------------- Punch Logic --------------------
-
-# This helps determine whether the last punch and current punch were within the CONSECUTIVE_THRESHOLD time
-punch_last_time = 0
-
-punch_hold_active = False
-punch_timer = None
-
-# Amount of seconds. If 2 punches fall within this time frame, the program takes it as mining
-CONSECUTIVE_THRESHOLD = 0.5
-
 # Initially set to body, can be changed to "hands"
 mode = "Body"
 
@@ -100,13 +89,30 @@ MONITOR_HEIGHT = monitor.height
 
 MONITOR_WIDTH_OFFSET = monitor.x
 
+# Shows the (x, y) coordinates to the centre of the screen
+MONITOR_CENTRE = (MONITOR_WIDTH//2, MONITOR_HEIGHT//2)
+
 # Mouse for camera movement and menu management
 mouse = Controller()
 
-# NOTE: DEBUG DELETE LATER -------------------------------------------------------------------------
 print(f"Amount of monitors detected: {len(monitors)}")
 print(f"Monitor width: {MONITOR_WIDTH}")
 print(f"Monitor height: {MONITOR_HEIGHT}")
+
+# Checks whether fingers have gone far enough to press again
+CAN_PRESS_INDEX = True
+CAN_PRESS_MIDDLE = True
+
+# -------------------- Punch Logic --------------------
+
+# This helps determine whether the last punch and current punch were within the CONSECUTIVE_THRESHOLD time
+punch_last_time = 0
+
+punch_hold_active = False
+punch_timer = None
+
+# Amount of seconds. If 2 punches fall within this time frame, the program takes it as mining
+CONSECUTIVE_THRESHOLD = 0.5
 
 def execute_single_punch():
 
@@ -388,20 +394,27 @@ def handle_look(rotation):
     yaw_angle = find_yaw_angle(rotation)
     pitch_angle = find_pitch_angle(rotation)
 
+    # Need to make gradual increase as angles change
+    # dy dx, difference in angle
+
     if yaw_angle > math.radians(40):
+        mouse.move(20, 0)
         print("Turned head right!")
     elif yaw_angle < math.radians(-40):
+        mouse.move(-20, 0)
         print("Turned head left!")
 
     if pitch_angle > math.radians(5):
+        mouse.move(0, 20)
         print("Nodded down!")
     elif pitch_angle < math.radians(-3):
+        mouse.move(0, -20)
         print("Nodded up!")
 
 # -------------------- Mouse Movement Hands --------------------
 
-base_index_finger_x = None
-base_index_finger_y = None
+reference_index_finger_x = None
+reference_index_finger_y = None
 
 # Depending on which hand is dominant depends what each of them do
 # Right dominant and Left non dominant by default
@@ -409,9 +422,9 @@ DOMINANT_HAND = "Right"
 NON_DOMINANT_HAND = "Left"
 
 def set_index_finger_pos(x, y):
-    global base_index_finger_x, base_index_finger_y
-    base_index_finger_x = x
-    base_index_finger_y = y
+    global reference_index_finger_x, reference_index_finger_y
+    reference_index_finger_x = x
+    reference_index_finger_y = y
 
 # This function now only plays the sound for arms calibration.
 # What I want it to do, is to find the middle of the body, and if the arms go above that threshold, then they can punch
@@ -702,14 +715,11 @@ def body_tracking(pose, frame):
     return "Body", image
 
 def hand_tracking(hands, frame):
-    global base_index_finger_x, base_index_finger_y
+    global reference_index_finger_x, reference_index_finger_y
+    global CAN_PRESS_INDEX, CAN_PRESS_MIDDLE
 
     # What I want:
-    # * A box should appear which shows where the menu is on open cv
-    # * Should be able to recalibrate this box where the cursor finger is in the middle
-    # * Depending on where the hand is in the box depends where cursor is
     # * Should be able to swap from left to right handed
-    # * Right hand left click, left hand right click
     # * Box could scale with z axis
 
     # * Implement it so that the mode changes based on screen recognition
@@ -743,29 +753,67 @@ def hand_tracking(hands, frame):
                             cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255,0,0), 1)
         
         label = hand_handedness.classification[0].label
+
+        non_dominant_wrist = None
+        non_dominant_thumb = None
+        non_dominant_index = None
+        non_dominant_middle = None
+        non_dominant_middle_base = None
         
+        # ----- Individual hand landmarks -----
         if label == DOMINANT_HAND:
             index_finger = results.multi_hand_landmarks[0].landmark[8]
+            if len(results.multi_hand_landmarks) > 1:
+                non_dominant_wrist = results.multi_hand_landmarks[1].landmark[0]
+                non_dominant_thumb = results.multi_hand_landmarks[1].landmark[4]
+                non_dominant_index = results.multi_hand_landmarks[1].landmark[8]
+                non_dominant_middle_base = results.multi_hand_landmarks[1].landmark[9]
+                non_dominant_middle = results.multi_hand_landmarks[1].landmark[12]
         else:
             if len(results.multi_hand_landmarks) > 1:
                 index_finger = results.multi_hand_landmarks[1].landmark[8]
+                non_dominant_wrist = results.multi_hand_landmarks[0].landmark[0]
+                non_dominant_thumb = results.multi_hand_landmarks[0].landmark[4]
+                non_dominant_index = results.multi_hand_landmarks[0].landmark[8]
+                non_dominant_middle_base = results.multi_hand_landmarks[0].landmark[9]
+                non_dominant_middle = results.multi_hand_landmarks[0].landmark[12]
             else:
                 index_finger = results.multi_hand_landmarks[0].landmark[8]
 
         cur_index_finger_x = int(index_finger.x * w)
         cur_index_finger_y = int(index_finger.y * h)
 
-        if base_index_finger_x == None or base_index_finger_y == None:
-            base_index_finger_x = cur_index_finger_x
-            base_index_finger_y = cur_index_finger_y
+        if non_dominant_wrist:
+            non_dominant_wrist_x = int(non_dominant_wrist.x * w)
+            non_dominant_wrist_y = int(non_dominant_wrist.x * h)
+
+        if non_dominant_thumb:
+            non_dominant_thumb_x = int(non_dominant_thumb.x * w)
+            non_dominant_thumb_y = int(non_dominant_thumb.y * h)
+        
+        if non_dominant_index:
+            non_dominant_index_x = int(non_dominant_index.x * w)
+            non_dominant_index_y = int(non_dominant_index.y * h)
+        
+        if non_dominant_middle:
+            non_dominant_middle_x = int(non_dominant_middle.x * w)
+            non_dominant_middle_y = int(non_dominant_middle.y * h)
+        
+        if non_dominant_middle_base:
+            non_dominant_middle_base_x = int(non_dominant_middle_base.x * w)
+            non_dominant_middle_base_y = int(non_dominant_middle_base.y * h)
+
+        if reference_index_finger_x == None or reference_index_finger_y == None:
+            reference_index_finger_x = cur_index_finger_x
+            reference_index_finger_y = cur_index_finger_y
 
         # This is where we can change how big the rectangle is gonna be
         rect_w = 200
         rect_h = 100
 
         # Makes it so that the rectangle appears around the centre of the finger
-        rx1 = base_index_finger_x - rect_w // 2
-        ry1 = base_index_finger_y - rect_h // 2
+        rx1 = reference_index_finger_x - rect_w // 2
+        ry1 = reference_index_finger_y - rect_h // 2
 
         # clamp so rectangle stays fully on screen:
         if rx1 < 0:
@@ -799,6 +847,48 @@ def hand_tracking(hands, frame):
             mouse_x += MONITOR_WIDTH_OFFSET
 
             mouse.position = (mouse_x, mouse_y)
+        
+        # Handles grabbing of blocks
+
+        dist_thumb_index = None
+        dist_thumb_middle = None
+        reference_distance = None
+
+        if non_dominant_index and non_dominant_middle and non_dominant_thumb and non_dominant_middle_base:
+
+            dist_thumb_index = np.hypot(
+                non_dominant_thumb_x - non_dominant_index_x,
+                non_dominant_thumb_y - non_dominant_index_y
+            )
+
+            dist_thumb_middle = np.hypot(
+                non_dominant_thumb_x - non_dominant_middle_x,
+                non_dominant_thumb_y - non_dominant_middle_y
+            )
+
+            # Since we dont know how far the hand will be
+            reference_distance = np.hypot(
+                non_dominant_wrist_x - non_dominant_middle_base_x,
+                non_dominant_wrist_y - non_dominant_middle_base_y
+            )
+        
+        if dist_thumb_index and dist_thumb_middle and reference_distance:
+
+            if dist_thumb_index > reference_distance * 0.4:
+                CAN_PRESS_INDEX = True
+            if dist_thumb_middle > reference_distance * 0.4:
+                CAN_PRESS_MIDDLE = True
+            
+            if CAN_PRESS_INDEX and dist_thumb_index < 15:
+                CAN_PRESS_INDEX = False
+
+                pyautogui.click(button="left")
+            
+            if CAN_PRESS_MIDDLE and dist_thumb_middle < 15:
+                CAN_PRESS_MIDDLE = False
+
+                pyautogui.click(button="right")
+
 
     # This handles all of the calibration
     if not command_queue.empty():
