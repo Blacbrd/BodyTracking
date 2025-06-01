@@ -294,6 +294,9 @@ def calculate_angle(a, b, c):
     angle = np.arccos(np.clip(cosine_angle, -1.0, 1.0))
     return np.degrees(angle)
 
+def calculate_midpoint(a, b):
+    return [(a[0] + b[0])/2, (a[1] + b[1])/2, (a[2] + b[2])/2]
+
 # If we have 2 quaternions being applied one after the other, we can represent it as one
 # Combined rotation
 def multiply_quat(q1, q2):
@@ -397,18 +400,18 @@ def handle_look(rotation):
     # Need to make gradual increase as angles change
     # dy dx, difference in angle
 
-    if yaw_angle > math.radians(40):
-        mouse.move(20, 0)
+    if yaw_angle > math.radians(35):
+        mouse.move(25, 0)
         print("Turned head right!")
-    elif yaw_angle < math.radians(-40):
-        mouse.move(-20, 0)
+    elif yaw_angle < math.radians(-35):
+        mouse.move(-25, 0)
         print("Turned head left!")
 
     if pitch_angle > math.radians(5):
-        mouse.move(0, 20)
+        mouse.move(0, 25)
         print("Nodded down!")
     elif pitch_angle < math.radians(-3):
-        mouse.move(0, -20)
+        mouse.move(0, -25)
         print("Nodded up!")
 
 # -------------------- Mouse Movement Hands --------------------
@@ -568,6 +571,22 @@ def body_tracking(pose, frame):
         elbowR    = get_landmark_point(landmarks[mp_pose_body.PoseLandmark.RIGHT_ELBOW])
         wristR    = get_landmark_point(landmarks[mp_pose_body.PoseLandmark.RIGHT_WRIST])
 
+        # Hip landmarks
+        hipL = get_landmark_point(landmarks[mp_pose_body.PoseLandmark.LEFT_HIP])
+        hipR = get_landmark_point(landmarks[mp_pose_body.PoseLandmark.RIGHT_HIP])
+
+        # Knee Landmarks
+        kneeL = get_landmark_point(landmarks[mp_pose_body.PoseLandmark.LEFT_KNEE])
+        kneeR = get_landmark_point(landmarks[mp_pose_body.PoseLandmark.RIGHT_KNEE])
+
+        # Midpoints
+        mid_point_shoulders = calculate_midpoint(shoulderL, shoulderR)
+        mid_point_hips = calculate_midpoint(hipL, hipR)
+        mid_point_knees = calculate_midpoint(kneeL, kneeR)
+
+        # Calculate angle for back
+        angle_back = calculate_angle(mid_point_shoulders, mid_point_hips, mid_point_knees)
+
         # Calculate elbow angles for each arm.
         angleL = int(calculate_angle(shoulderL, elbowL, wristL))
         angleR = int(calculate_angle(shoulderR, elbowR, wristR))
@@ -604,18 +623,16 @@ def body_tracking(pose, frame):
             placement_ready = True
 
         # --------- Walking (Forward Movement) Feature ----------
-        left_knee = get_landmark_point(landmarks[mp_pose_body.PoseLandmark.LEFT_KNEE])
-        right_knee = get_landmark_point(landmarks[mp_pose_body.PoseLandmark.RIGHT_KNEE])
 
         if WALK_THRESHOLD_ENABLED:
             if knee_threshold is None:
-                knee_threshold = find_horizontal_threshold(left_knee[1])
+                knee_threshold = find_horizontal_threshold(kneeL[1])
 
             # Draw the threshold line
             cv2.line(image, (0, knee_threshold), (image.shape[1], knee_threshold), (255, 0, 255), 2)
 
             # Handle the walking based on knee positions
-            handle_walking(left_knee[1], right_knee[1], knee_threshold)
+            handle_walking(kneeL[1], kneeR[1], knee_threshold)
 
             # Display walking status
             if walk_hold_active:
@@ -626,11 +643,18 @@ def body_tracking(pose, frame):
                             cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 255), 2, cv2.LINE_AA)
 
         # --------- Jumping Feature ----------
-        if left_knee[1] < knee_threshold and right_knee[1] < knee_threshold:
+        if kneeL[1] < knee_threshold and kneeR[1] < knee_threshold:
             if jump_ready:
                 handle_jump_event()
         else:
             jump_ready = True
+
+        # --------- Inventory Open Feature ----------
+
+        if angle_back < 125:
+            pyautogui.keyDown("e")
+            time.sleep(0.1)
+            pyautogui.keyUp("e")
 
         # --------- Looking Feature ----------
         # Need normalised coordinates instead of pixel coordinates
@@ -649,8 +673,8 @@ def body_tracking(pose, frame):
         X_vector = ear_to_ear_vector / np.linalg.norm(ear_to_ear_vector)
 
         # This gives z plane
-        midpoint = (left_ear + right_ear) / 2
-        nose_to_mid_vector = midpoint - nose
+        earMidpoint = (left_ear + right_ear) / 2
+        nose_to_mid_vector = earMidpoint - nose
         Z_vector = nose_to_mid_vector / np.linalg.norm(nose_to_mid_vector)
 
         # This gives y plane
@@ -694,8 +718,8 @@ def body_tracking(pose, frame):
                 print("Calibration error:", e)
         elif command == "calibrate_legs":
             try:
-                if 'left_knee' in locals() and left_knee is not None:
-                    knee_threshold = find_horizontal_threshold(left_knee[1])
+                if 'left_knee' in locals() and kneeL is not None:
+                    knee_threshold = find_horizontal_threshold(kneeL[1])
                     print("Knee threshold recalibrated. New threshold:", knee_threshold)
                 else:
                     print("Knee landmarks not detected. Cannot recalibrate threshold.")
@@ -874,17 +898,17 @@ def hand_tracking(hands, frame):
         
         if dist_thumb_index and dist_thumb_middle and reference_distance:
 
-            if dist_thumb_index > reference_distance * 0.4:
+            if dist_thumb_index > reference_distance * 0.2:
                 CAN_PRESS_INDEX = True
-            if dist_thumb_middle > reference_distance * 0.4:
+            if dist_thumb_middle > reference_distance * 0.2:
                 CAN_PRESS_MIDDLE = True
             
-            if CAN_PRESS_INDEX and dist_thumb_index < 15:
+            if CAN_PRESS_INDEX and dist_thumb_index < 12:
                 CAN_PRESS_INDEX = False
 
                 pyautogui.click(button="left")
             
-            if CAN_PRESS_MIDDLE and dist_thumb_middle < 15:
+            if CAN_PRESS_MIDDLE and dist_thumb_middle < 12:
                 CAN_PRESS_MIDDLE = False
 
                 pyautogui.click(button="right")
