@@ -79,10 +79,8 @@ mode = "Body"
 # Checks for the monitors and gets width and height
 monitors = screeninfo.get_monitors()
 
-if len(monitors) >= 2:
-    monitor = monitors[1]
-else:
-    monitor = monitors[0]
+# Always on laptop for VR mode
+monitor = monitors[0]
 
 MONITOR_WIDTH = monitor.width 
 MONITOR_HEIGHT = monitor.height
@@ -319,7 +317,7 @@ def calibrate_arms(current_wristL_z, current_wristR_z):
     playsound(r"C:\Users\blacb\Downloads\fart-with-reverb.mp3")
     print("Calibration of arms complete")
 
-def find_horizontal_threshold(left_knee_y, offset=15):
+def find_horizontal_threshold(left_knee_y, offset=10):
     return left_knee_y - offset
 
 # -------------------- Vosk Audio Setup --------------------
@@ -373,8 +371,6 @@ def speech_recognition_worker():
             command = ""
             if "arm" in text.lower():
                 command = "calibrate_arms"
-            elif "head" in text.lower():
-                command = "calibrate_head"
             elif "box" in text.lower():
                 command = "calibrate_box"
             elif "leg" in text.lower():
@@ -414,7 +410,7 @@ speech_thread = threading.Thread(target=speech_recognition_worker, daemon=True)
 speech_thread.start()
 
 # -------------------- Main Loop with OpenCV & Mediapipe --------------------
-cap = cv2.VideoCapture(0)
+cap = cv2.VideoCapture(1)
 
 def body_tracking(pose, frame):
     # Bring in all globals that are read or written
@@ -567,6 +563,9 @@ def body_tracking(pose, frame):
                 if 'left_knee' in locals() and kneeL is not None:
                     knee_threshold = find_horizontal_threshold(kneeL[1])
                     print("Knee threshold recalibrated. New threshold:", knee_threshold)
+                elif "right_knee" in locals() and kneeR is not None:
+                    knee_threshold = find_horizontal_threshold(kneeR[1])
+                    print("Knee threshold recalibrated. New threshold:", knee_threshold)
                 else:
                     print("Knee landmarks not detected. Cannot recalibrate threshold.")
             except Exception as e:
@@ -621,6 +620,7 @@ def hand_tracking(hands, frame):
         non_dominant_index = None
         non_dominant_middle = None
         non_dominant_middle_base = None
+        index_finger = None
         
         # ----- Individual hand landmarks -----
         if label == DOMINANT_HAND:

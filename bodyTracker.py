@@ -721,6 +721,9 @@ def body_tracking(pose, frame):
                 if 'left_knee' in locals() and kneeL is not None:
                     knee_threshold = find_horizontal_threshold(kneeL[1])
                     print("Knee threshold recalibrated. New threshold:", knee_threshold)
+                elif "right_knee" in locals() and kneeR is not None:
+                    knee_threshold = find_horizontal_threshold(kneeR[1])
+                    print("Knee threshold recalibrated. New threshold:", knee_threshold)
                 else:
                     print("Knee landmarks not detected. Cannot recalibrate threshold.")
             except Exception as e:
