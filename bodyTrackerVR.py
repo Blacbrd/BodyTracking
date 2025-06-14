@@ -560,10 +560,10 @@ def body_tracking(pose, frame):
                 print("Calibration error:", e)
         elif command == "calibrate_legs":
             try:
-                if 'left_knee' in locals() and kneeL is not None:
+                if kneeL is not None:
                     knee_threshold = find_horizontal_threshold(kneeL[1])
                     print("Knee threshold recalibrated. New threshold:", knee_threshold)
-                elif "right_knee" in locals() and kneeR is not None:
+                elif kneeR is not None:
                     knee_threshold = find_horizontal_threshold(kneeR[1])
                     print("Knee threshold recalibrated. New threshold:", knee_threshold)
                 else:
