@@ -79,7 +79,6 @@ mode = "Body"
 # Checks for the monitors and gets width and height
 monitors = screeninfo.get_monitors()
 
-# Always on laptop for VR mode
 monitor = monitors[0]
 
 MONITOR_WIDTH = monitor.width 
@@ -295,6 +294,154 @@ def calculate_angle(a, b, c):
 def calculate_midpoint(a, b):
     return [(a[0] + b[0])/2, (a[1] + b[1])/2, (a[2] + b[2])/2]
 
+# If we have 2 quaternions being applied one after the other, we can represent it as one
+# Combined rotation
+def multiply_quat(q1, q2):
+
+    # (w, x, y, z)
+
+    q = (q1[0]*q2[0] - q1[1]*q2[1] - q1[2]*q2[2] - q1[3]*q2[3],
+         q1[0]*q2[1] + q1[1]*q2[0] + q1[2]*q2[3] - q1[3]*q2[2],
+         q1[0]*q2[2] - q1[1]*q2[3] + q1[2]*q2[0] + q1[3]*q2[1],
+         q1[0]*q2[3] + q1[1]*q2[2] - q1[2]*q2[1] + q1[3]*q2[0])
+    
+    return q
+
+# rm stands for rotation matrix
+def find_quat_from_matrix(rm):
+
+    m = np.array(rm)
+    tr = m[0][0] + m[1][1] + m[2][2]
+
+    if tr > 0:
+        S = math.sqrt(tr + 1.0) * 2  # S=4*qw
+        qw = 0.25 * S
+        qx = (m[2][1] - m[1][2]) / S
+        qy = (m[0][2] - m[2][0]) / S
+        qz = (m[1][0] - m[0][1]) / S
+
+    elif (m[0][0] > m[1][1]) and (m[0][0] > m[2][2]):
+        S = math.sqrt(1.0 + m[0][0] - m[1][1] - m[2][2]) * 2  # S=4*qx
+        qw = (m[2][1] - m[1][2]) / S
+        qx = 0.25 * S
+        qy = (m[0][1] + m[1][0]) / S
+        qz = (m[0][2] + m[2][0]) / S
+
+    elif m[1][1] > m[2][2]:
+        S = math.sqrt(1.0 + m[1][1] - m[0][0] - m[2][2]) * 2  # S=4*qy
+        qw = (m[0][2] - m[2][0]) / S
+        qx = (m[0][1] + m[1][0]) / S
+        qy = 0.25 * S
+        qz = (m[1][2] + m[2][1]) / S
+
+    else:
+        S = math.sqrt(1.0 + m[2][2] - m[0][0] - m[1][1]) * 2  # S=4*qz
+        qw = (m[1][0] - m[0][1]) / S
+        qx = (m[0][2] + m[2][0]) / S
+        qy = (m[1][2] + m[2][1]) / S
+        qz = 0.25 * S
+
+    # Normalize the quaternion
+    norm = math.sqrt(qw**2 + qx**2 + qy**2 + qz**2)
+    return (qw/norm, qx/norm, qy/norm, qz/norm)
+
+def find_matrix_from_quat(q):
+
+    w, x, y, z = q
+
+    return np.array([
+        [1 - 2*(y**2 + z**2), 2*(x*y - w*z), 2*(x*z + w*y)],
+        [2*(x*y + w*z), 1 - 2*(x**2 + z**2), 2*(y*z - w*x)],
+        [2*(x*z - w*y), 2*(y*z + w*x), 1 - 2*(x**2 + y**2)]
+    ])
+
+def inverse_quat(q):
+    return (q[0], -q[1], -q[2], -q[3])
+
+def find_yaw_angle(rotation):
+    global base_rotation
+
+    q_current = find_quat_from_matrix(rotation)
+    q_base = find_quat_from_matrix(base_rotation)
+    q_rel = multiply_quat(q_current, inverse_quat(q_base))
+    R_rel = find_matrix_from_quat(q_rel)
+
+    yaw = math.atan2(R_rel[0,2], R_rel[2,2])
+    return yaw
+
+# -------------------- Camera Movement --------------------
+def set_base_rotation(rotation):
+    global base_rotation
+    base_rotation = rotation
+
+head_rotate_active = False      # Flag: are we currently auto‑rotating?
+head_rotate_thread = None       
+head_rotate_lock = threading.Lock() # Makes sure only one thread accesses the function
+
+# This is what the thread runs
+# Presses 'key' every 'interval' seconds
+def head_rotate_worker(key, interval):
+
+    global head_rotate_active
+
+    while True:
+        with head_rotate_lock:
+            if not head_rotate_active:
+                break
+
+        pyautogui.press(key)
+        time.sleep(interval)
+
+# Starts off the thread and rotates head
+# If the thread is already running, it does nothing
+def start_head_rotate(key, interval=0.1):
+    global head_rotate_active, head_rotate_thread
+
+    with head_rotate_lock:
+        if head_rotate_active:
+            return   # already running
+        
+        head_rotate_active = True
+
+    # Launch the worker thread
+    head_rotate_thread = threading.Thread(
+        target=head_rotate_worker,
+        args=(key, interval),
+        daemon=True
+    )
+    head_rotate_thread.start()
+
+# Stops the head from rotating by telling the thread to exit
+def stop_head_rotate():
+    global head_rotate_active
+
+    with head_rotate_lock:
+        head_rotate_active = False
+
+def handle_look(rotation):
+    global base_rotation
+
+    if base_rotation is None:
+        return
+    
+    yaw_angle = find_yaw_angle(rotation)
+
+    # Need to make gradual increase as angles change
+    # dy dx, difference in angle
+
+    if yaw_angle > math.radians(35):
+        start_head_rotate("right", interval=0.5)
+        print("Rotated Right!")
+
+    elif yaw_angle < math.radians(-35):
+        start_head_rotate("left", interval=0.5)
+        print("Rotated Left!")
+
+    else:
+
+        # Stop if the head isn't turned
+        stop_head_rotate()
+
 # -------------------- Mouse Movement Hands --------------------
 
 reference_index_finger_x = None
@@ -317,7 +464,7 @@ def calibrate_arms(current_wristL_z, current_wristR_z):
     playsound(r"C:\Users\blacb\Downloads\fart-with-reverb.mp3")
     print("Calibration of arms complete")
 
-def find_horizontal_threshold(left_knee_y, offset=10):
+def find_horizontal_threshold(left_knee_y, offset=15):
     return left_knee_y - offset
 
 # -------------------- Vosk Audio Setup --------------------
@@ -337,6 +484,7 @@ words = [
          "close", 
          "opened", 
          "closed", 
+         "head", 
          "change", 
          "hand", 
          "body", 
@@ -371,6 +519,8 @@ def speech_recognition_worker():
             command = ""
             if "arm" in text.lower():
                 command = "calibrate_arms"
+            elif "head" in text.lower():
+                command = "calibrate_head"
             elif "box" in text.lower():
                 command = "calibrate_box"
             elif "leg" in text.lower():
@@ -410,7 +560,7 @@ speech_thread = threading.Thread(target=speech_recognition_worker, daemon=True)
 speech_thread.start()
 
 # -------------------- Main Loop with OpenCV & Mediapipe --------------------
-cap = cv2.VideoCapture(1)
+cap = cv2.VideoCapture(0)
 
 def body_tracking(pose, frame):
     # Bring in all globals that are read or written
@@ -534,7 +684,43 @@ def body_tracking(pose, frame):
             time.sleep(0.1)
             pyautogui.keyUp("e")
 
-        
+        # --------- Looking Feature ----------
+        # Need normalised coordinates instead of pixel coordinates
+        left_ear = results.pose_landmarks.landmark[mp_pose_body.PoseLandmark.LEFT_EAR]
+        right_ear = results.pose_landmarks.landmark[mp_pose_body.PoseLandmark.RIGHT_EAR]
+        nose = results.pose_landmarks.landmark[mp_pose_body.PoseLandmark.NOSE]
+
+        left_ear = np.array([left_ear.x, left_ear.y, left_ear.z])
+        right_ear = np.array([right_ear.x, right_ear.y, right_ear.z])
+        nose = np.array([nose.x, nose.y, nose.z])
+
+        # This gives x plane
+        ear_to_ear_vector = right_ear - left_ear
+
+        # Normalises so that magnitude len is 1
+        X_vector = ear_to_ear_vector / np.linalg.norm(ear_to_ear_vector)
+
+        # This gives z plane
+        earMidpoint = (left_ear + right_ear) / 2
+        nose_to_mid_vector = earMidpoint - nose
+        Z_vector = nose_to_mid_vector / np.linalg.norm(nose_to_mid_vector)
+
+        # This gives y plane
+        face_vector = np.cross(Z_vector, X_vector)
+        Y_vector = face_vector / np.linalg.norm(face_vector)
+
+        # Gives a more accurate, 100% perpendicular z plane 
+        # Since the z plane we calculated from coordinates may have noise
+        Z_vector = np.cross(X_vector, Y_vector)
+        Z_vector = Z_vector / np.linalg.norm(Z_vector)
+
+        rotation_matrix = np.column_stack((X_vector, Y_vector, Z_vector))
+
+        # If the base rotation hasn't been set, set it
+        if base_rotation is None:
+            base_rotation = rotation_matrix
+
+        handle_look(rotation_matrix)
 
     except Exception as e:
         print("Error processing pose:", e)
@@ -570,6 +756,14 @@ def body_tracking(pose, frame):
                     print("Knee landmarks not detected. Cannot recalibrate threshold.")
             except Exception as e:
                 print("Recalibration error:", e)
+        
+        elif command == "calibrate_head":
+            try:
+                base_rotation = rotation_matrix
+                print(f"Successfully calibrated head, new rotation: {base_rotation}")
+            except Exception as e:
+                print("Calibration error:", e)
+        
         elif command == "change_hand":
             return "Hand", image
     
@@ -620,7 +814,6 @@ def hand_tracking(hands, frame):
         non_dominant_index = None
         non_dominant_middle = None
         non_dominant_middle_base = None
-        index_finger = None
         
         # ----- Individual hand landmarks -----
         if label == DOMINANT_HAND:
