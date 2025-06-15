@@ -430,11 +430,11 @@ def handle_look(rotation):
     # dy dx, difference in angle
 
     if yaw_angle > math.radians(35):
-        start_head_rotate("right", interval=0.5)
+        start_head_rotate("m", interval=0.5)
         print("Rotated Right!")
 
     elif yaw_angle < math.radians(-35):
-        start_head_rotate("left", interval=0.5)
+        start_head_rotate("n", interval=0.5)
         print("Rotated Left!")
 
     else:
