@@ -400,10 +400,10 @@ def handle_look(rotation):
     # Need to make gradual increase as angles change
     # dy dx, difference in angle
 
-    if yaw_angle > math.radians(35):
+    if yaw_angle > math.radians(45):
         mouse.move(25, 0)
         print("Turned head right!")
-    elif yaw_angle < math.radians(-35):
+    elif yaw_angle < math.radians(-40):
         mouse.move(-25, 0)
         print("Turned head left!")
 
@@ -433,10 +433,10 @@ def set_index_finger_pos(x, y):
 # What I want it to do, is to find the middle of the body, and if the arms go above that threshold, then they can punch
 # The reason I want to do this, is because when the user relaxes their hands, it counts as a punch, however that is incorrect, so I want to remove that
 def calibrate_arms(current_wristL_z, current_wristR_z):
-    playsound(r"C:\Users\blacb\Downloads\fart-with-reverb.mp3")
+    # playsound(r"C:\Users\blacb\Downloads\fart-with-reverb.mp3")
     print("Calibration of arms complete")
 
-def find_horizontal_threshold(left_knee_y, offset=15):
+def find_horizontal_threshold(left_knee_y, offset=16):
     return left_knee_y - offset
 
 # -------------------- Vosk Audio Setup --------------------
@@ -579,6 +579,9 @@ def body_tracking(pose, frame):
         kneeL = get_landmark_point(landmarks[mp_pose_body.PoseLandmark.LEFT_KNEE])
         kneeR = get_landmark_point(landmarks[mp_pose_body.PoseLandmark.RIGHT_KNEE])
 
+        # Face Landmarks
+        nose = get_landmark_point(landmarks[mp_pose_body.PoseLandmark.NOSE])
+
         # Midpoints
         mid_point_shoulders = calculate_midpoint(shoulderL, shoulderR)
         mid_point_hips = calculate_midpoint(hipL, hipR)
@@ -649,12 +652,31 @@ def body_tracking(pose, frame):
         else:
             jump_ready = True
 
+        # --------- Crouch Feature ----------
+
+        if angle_back < 150:
+            pyautogui.keyDown("c")
+            time.sleep(0.1)
+            pyautogui.keyUp("c")
+        
         # --------- Inventory Open Feature ----------
 
-        if angle_back < 125:
+        dist_wristR_face = np.hypot(
+                wristR[0] - nose[0],
+                wristR[1] - nose[1]
+            )
+        
+        dist_wristL_face = np.hypot(
+            wristL[0] - nose[0],
+            wristL[1] - nose[1]
+        )
+
+        if dist_wristL_face <= 15 or dist_wristR_face <= 15:
             pyautogui.keyDown("e")
             time.sleep(0.1)
             pyautogui.keyUp("e")
+            return "Hand", image
+
 
         # --------- Looking Feature ----------
         # Need normalised coordinates instead of pixel coordinates
@@ -821,6 +843,8 @@ def hand_tracking(hands, frame):
         if non_dominant_index:
             non_dominant_index_x = int(non_dominant_index.x * w)
             non_dominant_index_y = int(non_dominant_index.y * h)
+
+
         
         if non_dominant_middle:
             non_dominant_middle_x = int(non_dominant_middle.x * w)
@@ -880,6 +904,7 @@ def hand_tracking(hands, frame):
         dist_thumb_index = None
         dist_thumb_middle = None
         reference_distance = None
+        dist_two_hands = None
 
         if non_dominant_index and non_dominant_middle and non_dominant_thumb and non_dominant_middle_base:
 
@@ -898,6 +923,18 @@ def hand_tracking(hands, frame):
                 non_dominant_wrist_x - non_dominant_middle_base_x,
                 non_dominant_wrist_y - non_dominant_middle_base_y
             )
+
+            if cur_index_finger_x and cur_index_finger_y:
+                dist_two_hands = np.hypot(
+                    non_dominant_index_x - cur_index_finger_x,
+                    non_dominant_index_y - cur_index_finger_y,
+                )
+        if dist_two_hands:
+            if dist_two_hands < 10:
+                pyautogui.keyDown("e")
+                time.sleep(0.1)
+                pyautogui.keyUp("e")
+                return "Body", image
         
         if dist_thumb_index and dist_thumb_middle and reference_distance:
 
