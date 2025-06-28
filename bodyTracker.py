@@ -35,6 +35,8 @@ LARGE_ANGLE_THRESHOLD = 120   # Degrees: elbow is extended (punch thrown)
 # Threshold for when arms just go down, since I don't want the player to accidentally punch while resting
 arm_threshold = None # Set to just above the elbows. Wrists will have to go above this to activate it
 
+# Flag to prevent spamming crouch
+crouch_ready = True
 
 left_punch_display_counter = 0
 right_punch_display_counter = 0
@@ -259,6 +261,12 @@ def handle_knee_step(knee, current_time):
     last_knee_raised = knee
     last_step_time = current_time
 
+# -------------------- Crouch Automation --------------------
+
+def reset_crouch():
+    global crouch_ready
+    crouch_ready = True
+
 # -------------------- Jumping Automation --------------------
 def execute_jump():
     pyautogui.keyDown('space')
@@ -433,7 +441,7 @@ def set_index_finger_pos(x, y):
 # What I want it to do, is to find the middle of the body, and if the arms go above that threshold, then they can punch
 # The reason I want to do this, is because when the user relaxes their hands, it counts as a punch, however that is incorrect, so I want to remove that
 def calibrate_arms(current_wristL_z, current_wristR_z):
-    # playsound(r"C:\Users\blacb\Downloads\fart-with-reverb.mp3")
+    playsound(r"C:\Users\blacb\Downloads\fart-with-reverb.mp3")
     print("Calibration of arms complete")
 
 def find_horizontal_threshold(left_knee_y, offset=16):
@@ -542,6 +550,7 @@ def body_tracking(pose, frame):
     global knee_threshold
     global left_knee_is_up, right_knee_is_up, left_knee_was_up, right_knee_was_up
     global last_knee_raised, step_count, last_step_time, walk_hold_active
+    global crouch_ready
     global jump_ready
     global base_rotation
     global punch_hold_active, punch_last_time
@@ -654,10 +663,17 @@ def body_tracking(pose, frame):
 
         # --------- Crouch Feature ----------
 
-        if angle_back < 150:
+        if angle_back < 168 and crouch_ready:
+
             pyautogui.keyDown("c")
             time.sleep(0.1)
             pyautogui.keyUp("c")
+
+            # prevent re‑crouch for another second
+            crouch_ready = False
+            t = threading.Timer(1.0, reset_crouch)
+            t.daemon = True
+            t.start()
         
         # --------- Inventory Open Feature ----------
 
@@ -843,8 +859,6 @@ def hand_tracking(hands, frame):
         if non_dominant_index:
             non_dominant_index_x = int(non_dominant_index.x * w)
             non_dominant_index_y = int(non_dominant_index.y * h)
-
-
         
         if non_dominant_middle:
             non_dominant_middle_x = int(non_dominant_middle.x * w)
@@ -981,8 +995,15 @@ with mp_pose_body.Pose(min_detection_confidence=0.6, min_tracking_confidence=0.6
         else:
             mode, output = hand_tracking(hands, image)
         
-
-        cv2.imshow("Minecraft body tracking", output)
+        # Makes the output window larger
+        h, w = output.shape[:2]
+        output_big = cv2.resize(
+            output,
+            (int(w * 1.5), int(h * 1.5)),
+            interpolation=cv2.INTER_LINEAR
+        )
+        
+        cv2.imshow("Minecraft body tracking", output_big)
         if cv2.waitKey(1) & 0xFF == ord('q'):
             break
 
