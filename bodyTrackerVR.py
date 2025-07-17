@@ -14,11 +14,14 @@ import screeninfo
 import sys
 import math
 from pynput.mouse import Controller
+import pygame
 
 # -------------------- Global Setup --------------------
 
 # Disable fail safe for pyautogui to prevent program crashing when mouse moved to bottom left
 pyaudio.FAILSAFE = False
+
+pygame.mixer.init()
 
 # Set up for mediapipe
 mp_drawing = mp.solutions.drawing_utils
@@ -429,11 +432,11 @@ def handle_look(rotation):
     # Need to make gradual increase as angles change
     # dy dx, difference in angle
 
-    if yaw_angle > math.radians(35):
+    if yaw_angle > math.radians(63):
         start_head_rotate("m", interval=0.5)
         print("Rotated Right!")
 
-    elif yaw_angle < math.radians(-35):
+    elif yaw_angle < math.radians(-65):
         start_head_rotate("n", interval=0.5)
         print("Rotated Left!")
 
@@ -461,10 +464,10 @@ def set_index_finger_pos(x, y):
 # What I want it to do, is to find the middle of the body, and if the arms go above that threshold, then they can punch
 # The reason I want to do this, is because when the user relaxes their hands, it counts as a punch, however that is incorrect, so I want to remove that
 def calibrate_arms(current_wristL_z, current_wristR_z):
-    playsound(r"C:\Users\blacb\Downloads\fart-with-reverb.mp3")
+    
     print("Calibration of arms complete")
 
-def find_horizontal_threshold(left_knee_y, offset=15):
+def find_horizontal_threshold(left_knee_y, offset=31):
     return left_knee_y - offset
 
 # -------------------- Vosk Audio Setup --------------------
@@ -495,6 +498,10 @@ grammar = json.dumps(words)
 
 audio_queue = queue.Queue()
 command_queue = queue.Queue()
+
+def reset_crouch():
+    global crouch_ready
+    crouch_ready = True
 
 def audio_callback(in_data, frame_count, time_info, status_flags):
     audio_queue.put(in_data)
@@ -607,6 +614,8 @@ def body_tracking(pose, frame):
         kneeL = get_landmark_point(landmarks[mp_pose_body.PoseLandmark.LEFT_KNEE])
         kneeR = get_landmark_point(landmarks[mp_pose_body.PoseLandmark.RIGHT_KNEE])
 
+        nose = get_landmark_point(landmarks[mp_pose_body.PoseLandmark.NOSE])
+
         # Midpoints
         mid_point_shoulders = calculate_midpoint(shoulderL, shoulderR)
         mid_point_hips = calculate_midpoint(hipL, hipR)
@@ -676,13 +685,39 @@ def body_tracking(pose, frame):
                 handle_jump_event()
         else:
             jump_ready = True
+        
+        # --------- Crouch Feature ---------
+        if angle_back < 145 and crouch_ready:
+
+            pyautogui.keyDown("c")
+            time.sleep(0.1)
+            pyautogui.keyUp("c")
+
+            # prevent re‑crouch for another second
+            crouch_ready = False
+            t = threading.Timer(1.0, reset_crouch)
+            t.daemon = True
+            t.start()
+
 
         # --------- Inventory Open Feature ----------
 
-        if angle_back < 125:
+        dist_wristR_face = np.hypot(
+                wristR[0] - nose[0],
+                wristR[1] - nose[1]
+            )
+        
+        dist_wristL_face = np.hypot(
+            wristL[0] - nose[0],
+            wristL[1] - nose[1]
+        )
+
+        if dist_wristL_face <= 15 or dist_wristR_face <= 15:
             pyautogui.keyDown("e")
             time.sleep(0.1)
             pyautogui.keyUp("e")
+            return "Hand", image
+
 
         # --------- Looking Feature ----------
         # Need normalised coordinates instead of pixel coordinates
@@ -748,9 +783,13 @@ def body_tracking(pose, frame):
             try:
                 if kneeL is not None:
                     knee_threshold = find_horizontal_threshold(kneeL[1])
+                    pygame.mixer.music.load(r"C:\Users\blacb\Documents\GitHub\BodyTracking\correct.mp3")
+                    pygame.mixer.music.play()
                     print("Knee threshold recalibrated. New threshold:", knee_threshold)
                 elif kneeR is not None:
                     knee_threshold = find_horizontal_threshold(kneeR[1])
+                    pygame.mixer.music.load(r"C:\Users\blacb\Documents\GitHub\BodyTracking\correct.mp3")
+                    pygame.mixer.music.play()
                     print("Knee threshold recalibrated. New threshold:", knee_threshold)
                 else:
                     print("Knee landmarks not detected. Cannot recalibrate threshold.")
@@ -760,6 +799,8 @@ def body_tracking(pose, frame):
         elif command == "calibrate_head":
             try:
                 base_rotation = rotation_matrix
+                pygame.mixer.music.load(r"C:\Users\blacb\Documents\GitHub\BodyTracking\ding-sound-effect_1.mp3")
+                pygame.mixer.music.play()
                 print(f"Successfully calibrated head, new rotation: {base_rotation}")
             except Exception as e:
                 print("Calibration error:", e)
@@ -816,6 +857,8 @@ def hand_tracking(hands, frame):
         non_dominant_middle_base = None
         
         # ----- Individual hand landmarks -----
+
+        index_finger = None
         if label == DOMINANT_HAND:
             index_finger = results.multi_hand_landmarks[0].landmark[8]
             if len(results.multi_hand_landmarks) > 1:
@@ -908,6 +951,7 @@ def hand_tracking(hands, frame):
         dist_thumb_index = None
         dist_thumb_middle = None
         reference_distance = None
+        dist_two_hands = None
 
         if non_dominant_index and non_dominant_middle and non_dominant_thumb and non_dominant_middle_base:
 
@@ -926,6 +970,18 @@ def hand_tracking(hands, frame):
                 non_dominant_wrist_x - non_dominant_middle_base_x,
                 non_dominant_wrist_y - non_dominant_middle_base_y
             )
+
+            if cur_index_finger_x and cur_index_finger_y:
+                dist_two_hands = np.hypot(
+                    non_dominant_index_x - cur_index_finger_x,
+                    non_dominant_index_y - cur_index_finger_y,
+                )
+        if dist_two_hands:
+            if dist_two_hands < 10:
+                pyautogui.keyDown("e")
+                time.sleep(0.1)
+                pyautogui.keyUp("e")
+                return "Body", image
         
         if dist_thumb_index and dist_thumb_middle and reference_distance:
 
@@ -955,6 +1011,7 @@ def hand_tracking(hands, frame):
                 set_index_finger_pos(int(index_finger.x * w), int(index_finger.y * h))
 
     return "Hand", image
+
 
 
 with mp_pose_body.Pose(min_detection_confidence=0.6, min_tracking_confidence=0.6) as pose, mp_hands.Hands(min_detection_confidence=0.6, min_tracking_confidence=0.6) as hands:
