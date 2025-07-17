@@ -14,11 +14,15 @@ import screeninfo
 import sys
 import math
 from pynput.mouse import Controller
+import pygame
 
 # -------------------- Global Setup --------------------
 
 # Disable fail safe for pyautogui to prevent program crashing when mouse moved to bottom left
 pyaudio.FAILSAFE = False
+
+# Initialise pygame sounds
+pygame.mixer.init()
 
 # Set up for mediapipe
 mp_drawing = mp.solutions.drawing_utils
@@ -392,6 +396,7 @@ def find_pitch_angle(rotation):
     return pitch
 
 # -------------------- Camera Movement --------------------
+
 def set_base_rotation(rotation):
     global base_rotation
     base_rotation = rotation
@@ -405,22 +410,21 @@ def handle_look(rotation):
     yaw_angle = find_yaw_angle(rotation)
     pitch_angle = find_pitch_angle(rotation)
 
-    # Need to make gradual increase as angles change
-    # dy dx, difference in angle
-
+    MOUSE_MOVEMENT = 12
     if yaw_angle > math.radians(45):
-        mouse.move(25, 0)
+        mouse.move(MOUSE_MOVEMENT, 0)
         print("Turned head right!")
     elif yaw_angle < math.radians(-40):
-        mouse.move(-25, 0)
+        mouse.move(-MOUSE_MOVEMENT, 0)
         print("Turned head left!")
 
-    if pitch_angle > math.radians(5):
-        mouse.move(0, 25)
+    elif pitch_angle > math.radians(5):
+        mouse.move(0, MOUSE_MOVEMENT)
         print("Nodded down!")
     elif pitch_angle < math.radians(-3):
-        mouse.move(0, -25)
+        mouse.move(0, -MOUSE_MOVEMENT)
         print("Nodded up!")
+
 
 # -------------------- Mouse Movement Hands --------------------
 
@@ -441,10 +445,12 @@ def set_index_finger_pos(x, y):
 # What I want it to do, is to find the middle of the body, and if the arms go above that threshold, then they can punch
 # The reason I want to do this, is because when the user relaxes their hands, it counts as a punch, however that is incorrect, so I want to remove that
 def calibrate_arms(current_wristL_z, current_wristR_z):
-    playsound(r"C:\Users\blacb\Downloads\fart-with-reverb.mp3")
+    # path = r"C:\Users\blacb\Desktop\Minecraft body controller video\sybau.mp3"
+    # pygame.mixer.music.load(path)
+    # pygame.mixer.music.play()
     print("Calibration of arms complete")
 
-def find_horizontal_threshold(left_knee_y, offset=16):
+def find_horizontal_threshold(left_knee_y, offset=20):
     return left_knee_y - offset
 
 # -------------------- Vosk Audio Setup --------------------
@@ -493,7 +499,10 @@ def speech_recognition_worker():
             result = json.loads(partial_json)
             text = result.get("partial", "")
 
-        if "calibrate" in text.lower() and ("arm" in text.lower() or "leg" in text.lower() or "head" in text.lower() or "box" in text.lower()):
+        if "calibrate" in text.lower() and ("arm" in text.lower()
+                                             or "leg" in text.lower()
+                                               or "head" in text.lower()
+                                                or "box" in text.lower()):
             print("Voice command detected:", text)
 
             command = ""
@@ -626,7 +635,7 @@ def body_tracking(pose, frame):
             handle_punch()
 
         # --------- Block Placement Feature ----------
-        if wristR[0] < wristL[0]:
+        if wristR[0] > wristL[0]:
             if placement_ready:
                 pyautogui.click(button='right')
                 print("Block placed via wrist crossing!")
@@ -663,7 +672,7 @@ def body_tracking(pose, frame):
 
         # --------- Crouch Feature ----------
 
-        if angle_back < 168 and crouch_ready:
+        if angle_back < 145 and crouch_ready:
 
             pyautogui.keyDown("c")
             time.sleep(0.1)
@@ -826,6 +835,7 @@ def hand_tracking(hands, frame):
         non_dominant_middle_base = None
         
         # ----- Individual hand landmarks -----
+        index_finger = None
         if label == DOMINANT_HAND:
             index_finger = results.multi_hand_landmarks[0].landmark[8]
             if len(results.multi_hand_landmarks) > 1:
@@ -844,9 +854,9 @@ def hand_tracking(hands, frame):
                 non_dominant_middle = results.multi_hand_landmarks[0].landmark[12]
             else:
                 index_finger = results.multi_hand_landmarks[0].landmark[8]
-
-        cur_index_finger_x = int(index_finger.x * w)
-        cur_index_finger_y = int(index_finger.y * h)
+        if index_finger:
+            cur_index_finger_x = int(index_finger.x * w)
+            cur_index_finger_y = int(index_finger.y * h)
 
         if non_dominant_wrist:
             non_dominant_wrist_x = int(non_dominant_wrist.x * w)
