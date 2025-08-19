@@ -123,7 +123,7 @@ vosk_model_path = r"/absolute/path/to/vosk-model-small-en-us-0.15"
 * Pause Game → Options → VR Settings... → Seated Settings → Put settings as shown in image below:
 <img width="955" height="522" alt="image" src="https://github.com/user-attachments/assets/c88dd297-9c5e-46c5-b316-a4c52a319707" />
 
-* Pause Game → Options → Key Binds... → Rotate Left (N) Rotate Right (M)
+* Pause Game → Options → Controls → Key Binds... → Rotate Left (N) Rotate Right (M)
 <img width="1841" height="204" alt="image" src="https://github.com/user-attachments/assets/dc7d8683-8620-4a10-b691-24bb1f2fa5be" />
 
 ### 5) Run
