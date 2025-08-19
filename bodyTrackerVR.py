@@ -7,7 +7,6 @@ import queue
 import json
 import vosk
 import pyaudio
-from playsound import playsound
 import time
 import pyautogui
 import screeninfo

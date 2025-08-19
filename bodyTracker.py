@@ -30,7 +30,7 @@ mp_hands = mp.solutions.hands
 
 # --- ALL VARIABLES YOU CAN CHANGE ---
 
-VOSK_MODEL_PATH = r"C"    # TODO: Add your own vosk model path here (if relative path doesn't work, use full path)
+VOSK_MODEL_PATH = r""    # TODO: Add your own vosk model path here (if relative path doesn't work, use full path)
 
 # Punching
 SMALL_ANGLE_THRESHOLD = 45    # Degrees: elbow is bent (ready for a punch)
