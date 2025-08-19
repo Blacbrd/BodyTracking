@@ -111,6 +111,8 @@ vosk_model_path = r"/absolute/path/to/vosk-model-small-en-us-0.15"
 
 * Pause Game → Options → Controls → Key Binds... → Change Sneak to "C"
 * Pause Game → Options → Controls → Set Sneak to Toggle
+  <img width="1675" height="592" alt="image" src="https://github.com/user-attachments/assets/8b0c1d22-6f34-4c6f-b813-5bede5072049" />
+
 
 ###Vivecraft specific:
 * If using VR, install the Vivecraft mod (or any other compatible VR mod that allows movement with keyboard and mouse) (Can be installed using Cursed Forge)
