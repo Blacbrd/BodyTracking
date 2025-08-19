@@ -1,6 +1,6 @@
 # Minecraft Body & Hand Tracking Controller
 
-<img width="240" height="135" alt="YouTube thumbnail" src="https://github.com/user-attachments/assets/13077323-d19f-4348-96ad-5209aefb8188" />
+<img width="480" height="270" alt="YouTube thumbnail" src="https://github.com/user-attachments/assets/13077323-d19f-4348-96ad-5209aefb8188" />
 
 A Python program that maps body/hand movement + simple voice commands to Minecraft controls (mouse and keyboard).
 It uses MediaPipe for pose/hand tracking and Vosk for offline speech commands, plus `pyautogui`/`pynput` to control the game.
