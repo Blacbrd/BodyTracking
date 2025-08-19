@@ -1,13 +1,11 @@
 import cv2
 import mediapipe as mp
 import numpy as np
-from scipy.spatial.transform import Rotation
 import threading
 import queue
 import json
 import vosk
 import pyaudio
-from playsound import playsound
 import time
 import pyautogui
 import screeninfo
@@ -19,9 +17,10 @@ import pygame
 # -------------------- Global Setup --------------------
 
 # Disable fail safe for pyautogui to prevent program crashing when mouse moved to bottom left
-pyaudio.FAILSAFE = False
+pyautogui.FAILSAFE = False
 
 # Initialise pygame sounds
+# This is used for audio if you want to add any sound effects!
 pygame.mixer.init()
 
 # Set up for mediapipe
@@ -29,12 +28,33 @@ mp_drawing = mp.solutions.drawing_utils
 mp_pose_body = mp.solutions.pose
 mp_hands = mp.solutions.hands
 
+# --- ALL VARIABLES YOU CAN CHANGE ---
+
+VOSK_MODEL_PATH = r"C"    # TODO: Add your own vosk model path here (if relative path doesn't work, use full path)
+
+# Punching
+SMALL_ANGLE_THRESHOLD = 45    # Degrees: elbow is bent (ready for a punch)
+LARGE_ANGLE_THRESHOLD = 120   # Degrees: elbow is extended (punch thrown)
+DISPLAY_FRAMES = 15           # Number of frames to display the "Punch!" label
+CONSECUTIVE_PUNCH_THRESHOLD = 0.5 # Amount of seconds. If 2 punches fall within this time frame, the program takes it as mining
+KNEE_OFFSET = 20    # Amount of pixels the purple line appears above your knees
+
+# Walking
+WALK_THRESHOLD_ENABLED = True    # Set to False to disable the threshold line feature.
+CONSECUTIVE_WALK_THRESHOLD = 0.7 # If both knees are raised between the CONSECUTIVE_WALK_THRESHOLD, then continuously walk
+
+# Depending on which hand is dominant depends what each of them do
+# Right dominant and Left non dominant by default
+DOMINANT_HAND = "Right"
+NON_DOMINANT_HAND = "Left"
+
+# Inventory/hand model management
+RECTANGLE_WIDTH = 200
+RECTANGLE_HEIGHT = 100
+
 # --- Punch State Machine Variables ---
 left_ready = True
 right_ready = True
-
-SMALL_ANGLE_THRESHOLD = 45    # Degrees: elbow is bent (ready for a punch)
-LARGE_ANGLE_THRESHOLD = 120   # Degrees: elbow is extended (punch thrown)
 
 # Threshold for when arms just go down, since I don't want the player to accidentally punch while resting
 arm_threshold = None # Set to just above the elbows. Wrists will have to go above this to activate it
@@ -44,10 +64,8 @@ crouch_ready = True
 
 left_punch_display_counter = 0
 right_punch_display_counter = 0
-DISPLAY_FRAMES = 15           # Number of frames to display the "Punch!" label
 
 # --- Walking (Forward Movement) Variables ---
-WALK_THRESHOLD_ENABLED = True  # Set to False to disable the threshold line feature.
 knee_threshold = None          # Will store the y coordinate of the horizontal threshold line.
 
 # Walking state machine variables
@@ -56,8 +74,6 @@ right_knee_was_up = False
 left_knee_is_up = False
 right_knee_is_up = False
 
-# If both knees are raised between the CONSECUTIVE_WALK_THRESHOLD, then continuously walk
-CONSECUTIVE_WALK_THRESHOLD = 0.7
 walk_last_time = 0
 walk_hold_active = False
 walk_timer = None
@@ -106,8 +122,8 @@ print(f"Monitor width: {MONITOR_WIDTH}")
 print(f"Monitor height: {MONITOR_HEIGHT}")
 
 # Checks whether fingers have gone far enough to press again
-CAN_PRESS_INDEX = True
-CAN_PRESS_MIDDLE = True
+can_press_index = True
+can_press_middle = True
 
 # -------------------- Punch Logic --------------------
 
@@ -116,9 +132,6 @@ punch_last_time = 0
 
 punch_hold_active = False
 punch_timer = None
-
-# Amount of seconds. If 2 punches fall within this time frame, the program takes it as mining
-CONSECUTIVE_THRESHOLD = 0.5
 
 def execute_single_punch():
 
@@ -146,7 +159,7 @@ def handle_punch():
         # This will set a delay for "CONSECUTIVE_THRESHOLD" seconds (which could be 1 second)
         # If a second punch is recognised within this time, the else block will execute, which will cancel this thread
         # If not, then the execute_single_punch() function will run
-        punch_timer = threading.Timer(CONSECUTIVE_THRESHOLD, execute_single_punch)
+        punch_timer = threading.Timer(CONSECUTIVE_PUNCH_THRESHOLD, execute_single_punch)
         punch_timer.daemon = True
 
         # Starts the thread
@@ -431,31 +444,21 @@ def handle_look(rotation):
 reference_index_finger_x = None
 reference_index_finger_y = None
 
-# Depending on which hand is dominant depends what each of them do
-# Right dominant and Left non dominant by default
-DOMINANT_HAND = "Right"
-NON_DOMINANT_HAND = "Left"
-
 def set_index_finger_pos(x, y):
     global reference_index_finger_x, reference_index_finger_y
     reference_index_finger_x = x
     reference_index_finger_y = y
 
-# This function now only plays the sound for arms calibration.
-# What I want it to do, is to find the middle of the body, and if the arms go above that threshold, then they can punch
-# The reason I want to do this, is because when the user relaxes their hands, it counts as a punch, however that is incorrect, so I want to remove that
+# Dummy function for testing
 def calibrate_arms(current_wristL_z, current_wristR_z):
-    # path = r"C:\Users\blacb\Desktop\Minecraft body controller video\sybau.mp3"
-    # pygame.mixer.music.load(path)
-    # pygame.mixer.music.play()
     print("Calibration of arms complete")
 
-def find_horizontal_threshold(left_knee_y, offset=20):
+def find_horizontal_threshold(left_knee_y, offset=KNEE_OFFSET):
     return left_knee_y - offset
 
 # -------------------- Vosk Audio Setup --------------------
-vosk_model_path = r"C:\Users\blacb\Downloads\vosk-model-en-us-0.22-lgraph\vosk-model-en-us-0.22-lgraph"
-model = vosk.Model(vosk_model_path)
+
+model = vosk.Model(VOSK_MODEL_PATH)
 
 # These are the only words that will be recognised
 words = [
@@ -745,7 +748,7 @@ def body_tracking(pose, frame):
         print("Error processing pose:", e)
 
     # Release mouse if consecutive punching ended
-    if punch_hold_active and (time.time() - punch_last_time > CONSECUTIVE_THRESHOLD):
+    if punch_hold_active and (time.time() - punch_last_time > CONSECUTIVE_PUNCH_THRESHOLD):
         pyautogui.mouseUp(button='left')
         punch_hold_active = False
         print("Consecutive punches ended: released left mouse button")
@@ -790,16 +793,7 @@ def body_tracking(pose, frame):
 
 def hand_tracking(hands, frame):
     global reference_index_finger_x, reference_index_finger_y
-    global CAN_PRESS_INDEX, CAN_PRESS_MIDDLE
-
-    # What I want:
-    # * Should be able to swap from left to right handed
-    # * Box could scale with z axis
-
-    # * Implement it so that the mode changes based on screen recognition
-    # * So, if the menu is on screen, it changes to hand mode
-    # * When user hides hands, back to body mode
-    # * However, we can still have voice commands in case it goes wrong
+    global can_press_index, can_press_middle
 
     results = hands.process(frame)
 
@@ -860,7 +854,7 @@ def hand_tracking(hands, frame):
 
         if non_dominant_wrist:
             non_dominant_wrist_x = int(non_dominant_wrist.x * w)
-            non_dominant_wrist_y = int(non_dominant_wrist.x * h)
+            non_dominant_wrist_y = int(non_dominant_wrist.y * h)
 
         if non_dominant_thumb:
             non_dominant_thumb_x = int(non_dominant_thumb.x * w)
@@ -882,35 +876,31 @@ def hand_tracking(hands, frame):
             reference_index_finger_x = cur_index_finger_x
             reference_index_finger_y = cur_index_finger_y
 
-        # This is where we can change how big the rectangle is gonna be
-        rect_w = 200
-        rect_h = 100
-
         # Makes it so that the rectangle appears around the centre of the finger
-        rx1 = reference_index_finger_x - rect_w // 2
-        ry1 = reference_index_finger_y - rect_h // 2
+        rx1 = reference_index_finger_x - RECTANGLE_WIDTH // 2
+        ry1 = reference_index_finger_y - RECTANGLE_HEIGHT // 2
 
         # clamp so rectangle stays fully on screen:
         if rx1 < 0:
             rx1 = 0
-        elif rx1 + rect_w > w:
-            rx1 = w - rect_w
+        elif rx1 + RECTANGLE_WIDTH > w:
+            rx1 = w - RECTANGLE_WIDTH
 
         if ry1 < 0:
             ry1 = 0
-        elif ry1 + rect_h > h:
-            ry1 = h - rect_h
+        elif ry1 + RECTANGLE_HEIGHT > h:
+            ry1 = h - RECTANGLE_HEIGHT
 
         # top right = bottom left + width and height
-        rx2 = rx1 + rect_w
-        ry2 = ry1 + rect_h
+        rx2 = rx1 + RECTANGLE_WIDTH
+        ry2 = ry1 + RECTANGLE_HEIGHT
 
         cv2.rectangle(image, (rx1, ry1), (rx2, ry2), (0, 255, 0), 2)
 
         # Finger in rectangle -> mouse on screen
 
-        multiply_x = MONITOR_WIDTH / rect_w
-        multiply_y = MONITOR_HEIGHT / rect_h
+        multiply_x = MONITOR_WIDTH / RECTANGLE_WIDTH
+        multiply_y = MONITOR_HEIGHT / RECTANGLE_HEIGHT
 
         # Move mouse only if index finger inside the box
         if rx1 <= cur_index_finger_x <= rx2 and ry1 <= cur_index_finger_y <= ry2:
@@ -963,17 +953,17 @@ def hand_tracking(hands, frame):
         if dist_thumb_index and dist_thumb_middle and reference_distance:
 
             if dist_thumb_index > reference_distance * 0.2:
-                CAN_PRESS_INDEX = True
+                can_press_index = True
             if dist_thumb_middle > reference_distance * 0.2:
-                CAN_PRESS_MIDDLE = True
+                can_press_middle = True
             
-            if CAN_PRESS_INDEX and dist_thumb_index < 12:
-                CAN_PRESS_INDEX = False
+            if can_press_index and dist_thumb_index < 12:
+                can_press_index = False
 
                 pyautogui.click(button="left")
             
-            if CAN_PRESS_MIDDLE and dist_thumb_middle < 12:
-                CAN_PRESS_MIDDLE = False
+            if can_press_middle and dist_thumb_middle < 12:
+                can_press_middle = False
 
                 pyautogui.click(button="right")
 
