@@ -1,4 +1,4 @@
-# Minecraft Body & Hand Tracking Controller
+<img width="955" height="522" alt="image" src="https://github.com/user-attachments/assets/444b2b03-3cea-4d93-b04f-e06be559ed50" /># Minecraft Body & Hand Tracking Controller
 
 <a href="https://www.youtube.com/watch?v=QgRdTzry0po">
 <img width="720" height="405" alt="YouTube thumbnail" href src="https://github.com/user-attachments/assets/13077323-d19f-4348-96ad-5209aefb8188" />
@@ -108,12 +108,21 @@ vosk_model_path = r"/absolute/path/to/vosk-model-small-en-us-0.15"
 
 
 > If you don't do this the camera turning won't work!
-* If using VR, install the Vivecraft mod (or any other compatible VR mod that allows movement with keyboard and mouse) (Can be installed using Cursed Forge)
 
+* Pause Game → Options → Controls → Key Binds... → Change Sneak to "C"
+* Pause Game → Options → Controls → Set Sneak to Toggle
+
+###Vivecraft specific:
+* If using VR, install the Vivecraft mod (or any other compatible VR mod that allows movement with keyboard and mouse) (Can be installed using Cursed Forge)
 > Tutorial on how to install Vivecraft: 
 > (Cursed Forge) https://www.youtube.com/watch?v=N_77a6dXMJ0
 
-* Pause Game → Options → Controls → Mouse Settings: set look-left / look-right to `m` and `n` if using VR/vivecraft.
+* Pause Game → Options → VR Settings... → Play Mode: Seated
+* Pause Game → Options → VR Settings... → Seated Settings → Put settings as shown in image below:
+<img width="955" height="522" alt="image" src="https://github.com/user-attachments/assets/c88dd297-9c5e-46c5-b316-a4c52a319707" />
+
+* Pause Game → Options → Key Binds... → Rotate Left (N) Rotate Right (M)
+<img width="1841" height="204" alt="image" src="https://github.com/user-attachments/assets/dc7d8683-8620-4a10-b691-24bb1f2fa5be" />
 
 ### 5) Run
 
