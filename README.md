@@ -1,4 +1,4 @@
-<img width="955" height="522" alt="image" src="https://github.com/user-attachments/assets/444b2b03-3cea-4d93-b04f-e06be559ed50" /># Minecraft Body & Hand Tracking Controller
+# Minecraft Body & Hand Tracking Controller
 
 <a href="https://www.youtube.com/watch?v=QgRdTzry0po">
 <img width="720" height="405" alt="YouTube thumbnail" href src="https://github.com/user-attachments/assets/13077323-d19f-4348-96ad-5209aefb8188" />
