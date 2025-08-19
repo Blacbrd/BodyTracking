@@ -103,7 +103,9 @@ vosk_model_path = r"/absolute/path/to/vosk-model-small-en-us-0.15"
 
 ### 4) Minecraft settings (required)
 
-* Settings → Mouse: `Raw mouse input = ON`.
+* Pause Game → Options → Controls → Mouse Settings: `Raw mouse input = OFF`.
+<img width="1775" height="626" alt="image" src="https://github.com/user-attachments/assets/bb8ae948-6110-4eb9-9856-8e0dc12ce668" />
+
 
 > If you don't do this the camera turning won't work!
 * If using VR, install the Vivecraft mod (or any other compatible VR mod that allows movement with keyboard and mouse) (Can be installed using Cursed Forge)
@@ -111,12 +113,12 @@ vosk_model_path = r"/absolute/path/to/vosk-model-small-en-us-0.15"
 > Tutorial on how to install Vivecraft: 
 > (Cursed Forge) https://www.youtube.com/watch?v=N_77a6dXMJ0
 
-* Settings → Controls: set look-left / look-right to `m` and `n` if using VR/vivecraft.
+* Pause Game → Options → Controls → Mouse Settings: set look-left / look-right to `m` and `n` if using VR/vivecraft.
 
 ### 5) Run
 
 ```bash
-python <program>.py
+python bodyTracker.py
 ```
 
 * The OpenCV window shows the camera feed and landmark overlays. Press `q` inside the OpenCV window to quit.
