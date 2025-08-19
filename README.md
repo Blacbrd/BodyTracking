@@ -155,7 +155,7 @@ Supported words are limited by the small recognizer grammar. Useful commands you
 
 ---
 
-## Configurable constants (top of `main.py`)
+## Configurable constants (top of `bodyTracker.py`)
 
 * `SMALL_ANGLE_THRESHOLD`, `LARGE_ANGLE_THRESHOLD` — punch detection angles
 * `CONSECUTIVE_PUNCH_THRESHOLD` — time window for “mining” detection
