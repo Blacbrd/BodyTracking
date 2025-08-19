@@ -114,7 +114,7 @@ vosk_model_path = r"/absolute/path/to/vosk-model-small-en-us-0.15"
   <img width="1675" height="592" alt="image" src="https://github.com/user-attachments/assets/8b0c1d22-6f34-4c6f-b813-5bede5072049" />
 
 
-###Vivecraft specific:
+### Vivecraft specific:
 * If using VR, install the Vivecraft mod (or any other compatible VR mod that allows movement with keyboard and mouse) (Can be installed using Cursed Forge)
 > Tutorial on how to install Vivecraft: 
 > (Cursed Forge) https://www.youtube.com/watch?v=N_77a6dXMJ0
