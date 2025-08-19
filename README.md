@@ -12,7 +12,7 @@ It uses MediaPipe for pose/hand tracking and Vosk for offline speech commands, p
 ---
 ## Usage of program
 
-* If you want to use this program for a video, fork it,, make sure to credit both my GitHub and YouTube!
+* If you want to use this program for a video, fork it, make sure to credit both my GitHub and YouTube!
 
 ---
 
@@ -56,7 +56,7 @@ It uses MediaPipe for pose/hand tracking and Vosk for offline speech commands, p
 
 ## Quick setup (safe, cross-platform)
 
-> General idea: create & activate a venv, upgrade pip/tools, install requirements, download a Vosk model, set `vosk_model_path` in the script, then run `python main.py`.
+> General idea: create and activate a venv, upgrade pip/tools, install requirements, download a Vosk model, set `vosk_model_path` in the script, then run `bodyTracker.py`.
 
 ### 1) Create & activate a virtual environment
 
