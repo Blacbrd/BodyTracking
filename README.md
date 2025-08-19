@@ -9,10 +9,14 @@ It uses MediaPipe for pose/hand tracking and Vosk for offline speech commands, p
 
 > **Warning:** This program *controls your mouse and keyboard*. Run it when Minecraft is focused (or otherwise in a safe environment) and be ready to kill the script if it acts unexpectedly (press `q` in the OpenCV window or use your OS-level input lock).
 
+* Also note that this program was written and run entirely on Windows 11, so if your operating system differs then some features (such as the `screeninfo ` module, may not work). If that is the case, remove them from the program.
+
 ---
 ## Usage of program
 
 * If you want to use this program for a video or want to fork it, make sure to credit both my GitHub and YouTube!
+* YouTube: https://www.youtube.com/@BlacBrdDev
+* GitHub: https://github.com/Blacbrd
 
 ---
 
@@ -20,6 +24,8 @@ It uses MediaPipe for pose/hand tracking and Vosk for offline speech commands, p
 
 * Check out the YouTube video related to this project for a showcase of how I made it/use it!:
 * YouTube link: https://www.youtube.com/watch?v=QgRdTzry0po
+
+---
 
 ## Features
 
