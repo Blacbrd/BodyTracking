@@ -12,7 +12,7 @@ It uses MediaPipe for pose/hand tracking and Vosk for offline speech commands, p
 ---
 ## Usage of program
 
-* If you want to use this program for a video, fork it, make sure to credit both my GitHub and YouTube!
+* If you want to use this program for a video or want to fork it, make sure to credit both my GitHub and YouTube!
 
 ---
 
