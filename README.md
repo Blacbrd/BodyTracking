@@ -142,7 +142,7 @@ VOSK_MODEL_PATH = r"/absolute/path/to/vosk-model-small-en-us-0.15"
 ### 5) Run
 
 ```bash
-python bodyTracker.py
+python main.py
 ```
 
 - The OpenCV window shows the camera feed and landmark overlays. Press `q` inside the OpenCV window to quit.
