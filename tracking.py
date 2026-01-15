@@ -6,7 +6,7 @@ import pyautogui
 from pynput.mouse import Controller
 import mediapipe as mp
 
-from constants import (SMALL_ANGLE_THRESHOLD, LARGE_ANGLE_THRESHOLD, DISPLAY_FRAMES,
+from configurables import (SMALL_ANGLE_THRESHOLD, LARGE_ANGLE_THRESHOLD, DISPLAY_FRAMES,
                         CONSECUTIVE_PUNCH_THRESHOLD, KNEE_OFFSET, RECTANGLE_WIDTH, RECTANGLE_HEIGHT,
                         DOMINANT_HAND, WALK_THRESHOLD_ENABLED)
 import utils
