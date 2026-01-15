@@ -7,62 +7,69 @@
 A Python program that maps body/hand movement + simple voice commands to Minecraft controls (mouse and keyboard).
 It uses MediaPipe for pose/hand tracking and Vosk for offline speech commands, plus `pyautogui`/`pynput` to control the game.
 
-> **Warning:** This program *controls your mouse and keyboard*. Run it when Minecraft is focused (or otherwise in a safe environment) and be ready to kill the script if it acts unexpectedly (press `q` in the OpenCV window or use your OS-level input lock).
+> **Warning:** This program _controls your mouse and keyboard_. Run it when Minecraft is focused (or otherwise in a safe environment) and be ready to kill the script if it acts unexpectedly (press `q` in the OpenCV window or use your OS-level input lock).
 
-* Also note that this program was written and run entirely on Windows 11, so if your operating system differs then some features (such as the `screeninfo` module, may not work). If that is the case, remove them from the program.
+- Also note that this program was written and run entirely on Windows 11, so if your operating system differs then some features (such as the `screeninfo` module, may not work). If that is the case, remove them from the program.
 
 ---
+
 ## Usage of program
 
-* If you want to use this program for a video or want to fork it, make sure to credit both my GitHub and YouTube!
-* YouTube: https://www.youtube.com/@BlacBrdDev
-* GitHub: https://github.com/Blacbrd
+- If you want to use this program for a video or want to fork it, make sure to credit both my GitHub and YouTube!
+- YouTube: https://www.youtube.com/@BlacBrdDev
+- GitHub: https://github.com/Blacbrd
 
 ---
 
 ## YouTube showcase
 
-* Check out the YouTube video related to this project for a showcase of how I made it/use it!:
-* YouTube link: https://www.youtube.com/watch?v=QgRdTzry0po
+- Check out the YouTube video related to this project for a showcase of how I made it/use it!:
+- YouTube link: https://www.youtube.com/watch?v=QgRdTzry0po
 
 ---
 
 ## Features
 
-* Punch / mining detection (single click / hold for consecutive punches)
-* Walking with alternating knee raise pattern
-* Jumping and crouch with body posture detection
-* Block placement when wrists cross
-* Inventory opening with wrist-to-face gesture; in-menu finger-as-mouse hand mode
-* Voice commands (Vosk) for recalibration and switching modes
-* Head-turn → camera movement (mouse) support
-* Basic calibration via voice commands: `calibrate arms`, `calibrate legs`, `calibrate head`, `calibrate box`
-* Mode switching via voice: `change hand`, `change body`
+- Punch / mining detection (single click / hold for consecutive punches)
+- Walking with alternating knee raise pattern
+- Jumping and crouch with body posture detection
+- Block placement when wrists cross
+- Inventory opening with wrist-to-face gesture; in-menu finger-as-mouse hand mode
+- Voice commands (Vosk) for recalibration and switching modes
+- Head-turn → camera movement (mouse) support
+- Basic calibration via voice commands: `calibrate arms`, `calibrate legs`, `calibrate head`, `calibrate box`
+- Mode switching via voice: `change hand`, `change body`
 
 ---
 
 ## Requirements (software & hardware)
 
-* **Python 3.12.x** (the project was tested with Python 3.12).
-* Camera + Microphone.
-* Laptop that can run Minecraft along with other apps.
-* Minecraft client (and Vivecraft if using VR).
-* Preferably 2 monitors; works with 1.
+- **Python 3.12.x** (the project was tested with Python 3.12).
+- Camera + Microphone.
+- Laptop that can run Minecraft along with other apps.
+- Minecraft client (and Vivecraft if using VR).
+- Preferably 2 monitors; works with 1.
 
 ---
 
 ## Files
 
-* `bodyTracker.py` — Body controller
-* `bodyTrackerVR.py` — Body controller with VR
-* `requirements.txt` — Python dependencies (see below).
-* `README.md` — this file.
+- `audio.py` - Handles audio input logic
+- `configurables.py` - User can change thresholds here
+- `main.py` - The main file the user will run
+- `state.py` - Controls the state of the program (global variables)
+- `tracking.py` - Main Mediapipe tracking script
+- `utils` - Helpful functions for program
+- `bodyTrackerVR.py` - Body controller with VR
+- `requirements.txt` - Python dependencies (see below)
+- `.env.example` - Example `.env` that a user should replicate
+- `README.md` - This file
 
 ---
 
 ## Quick setup (safe, cross-platform)
 
-> General idea: create and activate a venv, upgrade pip/tools, install requirements, download a Vosk model, set `vosk_model_path` in the script, then run `bodyTracker.py`.
+> General idea: create and activate a venv, upgrade pip/tools, install requirements, download a Vosk model, set `VOSK_MODEL_PATH` in `.env`, then run `main.py`.
 
 ### 1) Create & activate a virtual environment
 
@@ -92,45 +99,45 @@ pip install -r requirements.txt
 
 ### 3) Download a Vosk model
 
-Download a Vosk model and set `vosk_model_path` (absolute path) in the script. The official model list and downloads are here: 
+Download a Vosk model and set `VOSK_MODEL_PATH` (absolute path) in a `.env` file. The official model list and downloads are here:
 https://alphacephei.com/vosk/models
 
 For example, a small English model:
 
-* `vosk-model-small-en-us-0.15` or `vosk-model-en-us-0.22` (larger / more accurate).
+- `vosk-model-small-en-us-0.15` or `vosk-model-en-us-0.22` (larger / more accurate).
 
 > I used vosk-model-en-us-0.22-lgraph
 
-Unzip the model and point `vosk_model_path` to the folder:
+Unzip the model and point `VOSK_MODEL_PATH` to the folder:
 
 ```python
-vosk_model_path = r"/absolute/path/to/vosk-model-small-en-us-0.15"
+VOSK_MODEL_PATH = r"/absolute/path/to/vosk-model-small-en-us-0.15"
 ```
 
 ### 4) Minecraft settings (required)
 
-* Pause Game → Options → Controls → Mouse Settings: `Raw mouse input = OFF`.
-<img width="1775" height="626" alt="image" src="https://github.com/user-attachments/assets/bb8ae948-6110-4eb9-9856-8e0dc12ce668" />
-
+- Pause Game → Options → Controls → Mouse Settings: `Raw mouse input = OFF`.
+  <img width="1775" height="626" alt="image" src="https://github.com/user-attachments/assets/bb8ae948-6110-4eb9-9856-8e0dc12ce668" />
 
 > If you don't do this the camera turning won't work!
 
-* Pause Game → Options → Controls → Key Binds... → Change Sneak to "C"
-* Pause Game → Options → Controls → Set Sneak to Toggle
+- Pause Game → Options → Controls → Key Binds... → Change Sneak to "C"
+- Pause Game → Options → Controls → Set Sneak to Toggle
   <img width="1675" height="592" alt="image" src="https://github.com/user-attachments/assets/8b0c1d22-6f34-4c6f-b813-5bede5072049" />
 
-
 ### Vivecraft specific:
-* If using VR, install the Vivecraft mod (or any other compatible VR mod that allows movement with keyboard and mouse) (Can be installed using Cursed Forge)
-> Tutorial on how to install Vivecraft: 
-> (Cursed Forge) https://www.youtube.com/watch?v=N_77a6dXMJ0
 
-* Pause Game → Options → VR Settings... → Play Mode: Seated
-* Pause Game → Options → VR Settings... → Seated Settings → Put settings as shown in image below:
-<img width="955" height="522" alt="image" src="https://github.com/user-attachments/assets/c88dd297-9c5e-46c5-b316-a4c52a319707" />
+- If using VR, install the Vivecraft mod (or any other compatible VR mod that allows movement with keyboard and mouse) (Can be installed using Cursed Forge)
 
-* Pause Game → Options → Controls → Key Binds... → Rotate Left (N) Rotate Right (M)
-<img width="1841" height="204" alt="image" src="https://github.com/user-attachments/assets/dc7d8683-8620-4a10-b691-24bb1f2fa5be" />
+  > Tutorial on how to install Vivecraft:
+  > (Cursed Forge) https://www.youtube.com/watch?v=N_77a6dXMJ0
+
+- Pause Game → Options → VR Settings... → Play Mode: Seated
+- Pause Game → Options → VR Settings... → Seated Settings → Put settings as shown in image below:
+  <img width="955" height="522" alt="image" src="https://github.com/user-attachments/assets/c88dd297-9c5e-46c5-b316-a4c52a319707" />
+
+- Pause Game → Options → Controls → Key Binds... → Rotate Left (N) Rotate Right (M)
+  <img width="1841" height="204" alt="image" src="https://github.com/user-attachments/assets/dc7d8683-8620-4a10-b691-24bb1f2fa5be" />
 
 ### 5) Run
 
@@ -138,7 +145,7 @@ vosk_model_path = r"/absolute/path/to/vosk-model-small-en-us-0.15"
 python bodyTracker.py
 ```
 
-* The OpenCV window shows the camera feed and landmark overlays. Press `q` inside the OpenCV window to quit.
+- The OpenCV window shows the camera feed and landmark overlays. Press `q` inside the OpenCV window to quit.
 
 ---
 
@@ -146,34 +153,34 @@ python bodyTracker.py
 
 Supported words are limited by the small recognizer grammar. Useful commands you can say while the program runs:
 
-* `calibrate arms` → Dummy function, doesn't do anything
-* `calibrate legs` → sets knee threshold
-* `calibrate head` → recalibrates base head rotation
-* `calibrate box` → repositions the inventory box for hand mode
-* `change hand` → switch to hand mode (inventory / menus)
-* `change body` → switch back to body mode
+- `calibrate arms` → Dummy function, doesn't do anything
+- `calibrate legs` → sets knee threshold
+- `calibrate head` → recalibrates base head rotation
+- `calibrate box` → repositions the inventory box for hand mode
+- `change hand` → switch to hand mode (inventory / menus)
+- `change body` → switch back to body mode
 
 ---
 
-## Configurable constants (top of `bodyTracker.py`)
+## Configurable constants (`configurables.py`)
 
-* `SMALL_ANGLE_THRESHOLD`, `LARGE_ANGLE_THRESHOLD` — punch detection angles
-* `CONSECUTIVE_PUNCH_THRESHOLD` — time window for “mining” detection
-* `KNEE_OFFSET` — how far above knees the purple threshold line is drawn (pixels)
-* `WALK_THRESHOLD_ENABLED`, `CONSECUTIVE_WALK_THRESHOLD` — walking behaviour
-* `DOMINANT_HAND` — `"Right"` or `"Left"`
-* `RECTANGLE_WIDTH` / `HEIGHT` — hand-mode pointing box size
-* `MONITOR` selection is automatic from `screeninfo`
+- `SMALL_ANGLE_THRESHOLD`, `LARGE_ANGLE_THRESHOLD` - punch detection angles
+- `CONSECUTIVE_PUNCH_THRESHOLD` - time window for “mining” detection
+- `KNEE_OFFSET` - how far above knees the purple threshold line is drawn (pixels)
+- `WALK_THRESHOLD_ENABLED`, `CONSECUTIVE_WALK_THRESHOLD` - walking behaviour
+- `DOMINANT_HAND` - `"Right"` or `"Left"`
+- `RECTANGLE_WIDTH` / `HEIGHT` - hand-mode pointing box size
+- `MONITOR` selection is automatic from `screeninfo`
 
 ---
 
 ## Safety notes (IMPORTANT)
 
-* This program will click and press keys. Keep a spare keyboard/mouse or an OS-level input lock if you need to regain control quickly.
-* Test with Minecraft already opened and in focus to prevent the mouse from drifting onto other programs.
-* Do not run on an account or system where unexpected keypresses could be dangerous.
-* Make sure stretch/warm up before using the program, and take regular breaks.
-* The head turning feature is very finecky and hard to get used to, make sure to avoid fast head movements as these can cause neck strain (trust me I've been there).
+- This program will click and press keys. Keep a spare keyboard/mouse or an OS-level input lock if you need to regain control quickly.
+- Test with Minecraft already opened and in focus to prevent the mouse from drifting onto other programs.
+- Do not run on an account or system where unexpected keypresses could be dangerous.
+- Make sure stretch/warm up before using the program, and take regular breaks.
+- The head turning feature is very finecky and hard to get used to, make sure to avoid fast head movements as these can cause neck strain (trust me I've been there).
 
 ---
 
@@ -185,13 +192,10 @@ MediaPipe currently publishes Python wheels and supports desktop Python versions
 
 ### PyAudio install tips
 
-* **Windows:** use `pipwin` or a prebuilt wheel if `pip install PyAudio` fails.
-* **macOS:** `brew install portaudio` then `pip install pyaudio`.
-* **Ubuntu/Debian:** `sudo apt-get install portaudio19-dev python3-dev` then `pip install pyaudio`.
-
+- **Windows:** use `pipwin` or a prebuilt wheel if `pip install PyAudio` fails.
+- **macOS:** `brew install portaudio` then `pip install pyaudio`.
+- **Ubuntu/Debian:** `sudo apt-get install portaudio19-dev python3-dev` then `pip install pyaudio`.
 
 ### Vosk & models
 
-Vosk itself installs via `pip install vosk`. Models are downloaded separately (alpha-cephei models page and mirrors). Point `vosk.Model()` at the unzipped model directory. 
-
-
+Vosk itself installs via `pip install vosk`. Models are downloaded separately (alpha-cephei models page and mirrors). Point `vosk.Model()` at the unzipped model directory.
